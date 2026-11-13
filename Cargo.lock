@@ -2149,9 +2149,16 @@ dependencies = [
 name = "mneme"
 version = "0.1.0"
 dependencies = [
+ "mneme-audio",
+ "mneme-core",
+ "mneme-pipeline",
+ "mneme-store",
+ "mneme-transcribe",
+ "serde",
  "serde_json",
  "tauri",
  "tauri-build",
+ "tempfile",
 ]
 
 [[package]]

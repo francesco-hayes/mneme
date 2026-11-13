@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Mneme records your microphone during a meeting to write the transcript. The audio is transcribed on this Mac and then discarded.</string>
+	<key>NSAudioCaptureUsageDescription</key>
+	<string>Mneme records the sound of other apps during a meeting to write what the other people say. The audio is transcribed on this Mac and then discarded.</string>
+</dict>
+</plist>

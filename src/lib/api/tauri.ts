@@ -1,30 +1,87 @@
-// The Tauri implementation of the API contract. A stub for now: issue 021
-// replaces every method with a call to a backend command or event.
+// The Tauri implementation of the API contract: every method is a command or
+// an event of the Rust side (src-tauri/src/commands.rs, src-tauri/src/host.rs).
 
-import type { Api } from "./types";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import type {
+  Api,
+  DownloadProgress,
+  Meeting,
+  MeetingSummary,
+  ModelInfo,
+  Permission,
+  Permissions,
+  RecordingState,
+  Settings,
+  TranscriptLine,
+} from "./types";
 
-function notImplemented(method: keyof Api): never {
-  throw new Error(`api.${method} is not implemented yet (issue 021)`);
+/** Event names, as `src-tauri/src/host.rs` sends them. */
+const RECORDING_STATE_EVENT = "recording-state";
+const DOWNLOAD_PROGRESS_EVENT = "download-progress";
+
+/**
+ * Calls a backend command. The backend rejects with a plain sentence; the UI
+ * expects an `Error`, as the mock throws, so the sentence becomes its message.
+ */
+async function call<T>(
+  command: string,
+  args?: Record<string, unknown>,
+): Promise<T> {
+  try {
+    return await invoke<T>(command, args);
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+}
+
+/**
+ * Subscribes to a backend event and returns the unsubscribe function at once.
+ * `listen` registers asynchronously, so an unsubscribe that comes before it
+ * has finished is remembered and carried out as soon as it has.
+ */
+function subscribe<T>(event: string, cb: (payload: T) => void): () => void {
+  let stopped = false;
+  let unlisten: (() => void) | null = null;
+  listen<T>(event, (e) => {
+    if (!stopped) cb(e.payload);
+  }).then(
+    (fn) => {
+      if (stopped) fn();
+      else unlisten = fn;
+    },
+    (error: unknown) => {
+      console.error(`Could not listen to ${event}`, error);
+    },
+  );
+  return () => {
+    stopped = true;
+    unlisten?.();
+    unlisten = null;
+  };
 }
 
 export const tauriApi: Api = {
-  listMeetings: async () => notImplemented("listMeetings"),
-  getMeeting: async () => notImplemented("getMeeting"),
-  getTranscript: async () => notImplemented("getTranscript"),
-  startMeeting: async () => notImplemented("startMeeting"),
-  stopMeeting: async () => notImplemented("stopMeeting"),
-  saveNotes: async () => notImplemented("saveNotes"),
-  renameMeeting: async () => notImplemented("renameMeeting"),
-  showInFinder: async () => notImplemented("showInFinder"),
-  getRecordingState: async () => notImplemented("getRecordingState"),
-  onRecordingState: () => notImplemented("onRecordingState"),
-  listModels: async () => notImplemented("listModels"),
-  downloadModel: async () => notImplemented("downloadModel"),
-  cancelDownload: async () => notImplemented("cancelDownload"),
-  deleteModel: async () => notImplemented("deleteModel"),
-  onDownloadProgress: () => notImplemented("onDownloadProgress"),
-  getSettings: async () => notImplemented("getSettings"),
-  updateSettings: async () => notImplemented("updateSettings"),
-  getPermissions: async () => notImplemented("getPermissions"),
-  requestPermission: async () => notImplemented("requestPermission"),
+  listMeetings: () => call<MeetingSummary[]>("list_meetings"),
+  getMeeting: (id) => call<Meeting>("get_meeting", { id }),
+  getTranscript: (id) => call<TranscriptLine[]>("get_transcript", { id }),
+  startMeeting: () => call<Meeting>("start_meeting"),
+  stopMeeting: () => call<Meeting>("stop_meeting"),
+  saveNotes: (id, notes) => call<void>("save_notes", { id, notes }),
+  renameMeeting: (id, title) =>
+    call<MeetingSummary>("rename_meeting", { id, title }),
+  showInFinder: (id) => call<void>("show_in_finder", { id }),
+  getRecordingState: () => call<RecordingState>("get_recording_state"),
+  onRecordingState: (cb) =>
+    subscribe<RecordingState>(RECORDING_STATE_EVENT, cb),
+  listModels: () => call<ModelInfo[]>("list_models"),
+  downloadModel: (id) => call<void>("download_model", { id }),
+  cancelDownload: (id) => call<void>("cancel_download", { id }),
+  deleteModel: (id) => call<void>("delete_model", { id }),
+  onDownloadProgress: (cb) =>
+    subscribe<DownloadProgress>(DOWNLOAD_PROGRESS_EVENT, cb),
+  getSettings: () => call<Settings>("get_settings"),
+  updateSettings: (patch) => call<Settings>("update_settings", { patch }),
+  getPermissions: () => call<Permissions>("get_permissions"),
+  requestPermission: (kind) => call<Permission>("request_permission", { kind }),
 };

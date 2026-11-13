@@ -15,6 +15,16 @@ tauri-build = { version = "2.7.4", features = [] }
 
 [dependencies]
 tauri = { version = "2.12.5", features = [] }
+# The contract types the commands return.
+serde = { workspace = true }
+# The area crates the commands connect to the window.
+mneme-core = { workspace = true }
+mneme-audio = { path = "../crates/mneme-audio" }
+mneme-transcribe = { path = "../crates/mneme-transcribe" }
+mneme-store = { path = "../crates/mneme-store" }
+mneme-pipeline = { path = "../crates/mneme-pipeline" }
 
 [dev-dependencies]
 serde_json = { workspace = true }
+# Temp folders for the app data dir, Documents and the models.
+tempfile = "3.27.0"

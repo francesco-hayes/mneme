@@ -5,7 +5,7 @@
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
-    "beforeDevCommand": "VITE_MNEME_API=mock pnpm dev",
+    "beforeDevCommand": "pnpm dev",
     "beforeBuildCommand": "pnpm build"
   },
   "app": {

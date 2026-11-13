@@ -1,10 +1,121 @@
-//! The Mneme desktop app: window, and later commands, tray and shortcut (PRD 06).
+//! The Mneme desktop app: the window and the commands behind it (PRD 06).
+//!
+//! `app.rs` is the app's logic with no Tauri in it, `commands.rs` exposes it
+//! to the window, `host.rs` is the real audio, model and Finder side.
+
+use std::fs::{File, TryLockError};
+use std::io;
+use std::path::Path;
+use std::sync::Arc;
+
+use tauri::{AppHandle, Manager, RunEvent};
+
+pub mod app;
+mod commands;
+pub mod dto;
+mod host;
+
+use commands::AppState;
+
+/// File in the app data folder that the running copy keeps locked.
+const INSTANCE_LOCK_FILE: &str = "mneme.lock";
+
+/// Takes the single-instance lock in `dir`. `Ok(None)` means another running
+/// copy holds it. The lock is released when the returned file is dropped or
+/// the process ends, however it ends.
+fn instance_lock(dir: &Path) -> io::Result<Option<File>> {
+    std::fs::create_dir_all(dir)?;
+    let file = File::options()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(dir.join(INSTANCE_LOCK_FILE))?;
+    match file.try_lock() {
+        Ok(()) => Ok(Some(file)),
+        Err(TryLockError::WouldBlock) => Ok(None),
+        Err(TryLockError::Error(error)) => Err(error),
+    }
+}
+
+/// Opens the app's state at launch. Recovery of meetings a crashed run left
+/// open assumes one running copy, so a second copy exits here.
+fn launch(handle: &AppHandle) -> AppState {
+    let dirs = handle
+        .path()
+        .app_data_dir()
+        .and_then(|data| Ok((data, handle.path().document_dir()?)));
+    let (data_dir, documents_dir) = match dirs {
+        Ok(dirs) => dirs,
+        Err(error) => {
+            return AppState {
+                core: Err(format!("Mneme could not find its folders: {error}")),
+                _instance_lock: None,
+            };
+        }
+    };
+    let instance_lock = match instance_lock(&data_dir) {
+        Ok(Some(lock)) => Some(lock),
+        Ok(None) => {
+            eprintln!("mneme: another copy of Mneme is already running");
+            std::process::exit(0);
+        }
+        Err(error) => {
+            eprintln!("mneme: single-instance lock: {error}");
+            None
+        }
+    };
+    let host = Arc::new(host::TauriHost::new(handle.clone()));
+    AppState {
+        core: app::AppCore::open(&data_dir, &documents_dir, host),
+        _instance_lock: instance_lock,
+    }
+}
 
 /// Builds and runs the Tauri app. Blocks until the app exits.
 pub fn run() {
-    tauri::Builder::default()
-        .run(tauri::generate_context!())
-        .expect("failed to run Mneme");
+    let app = tauri::Builder::default()
+        .setup(|app| {
+            let state = launch(app.handle());
+            if let Err(error) = &state.core {
+                eprintln!("mneme: {error}");
+            }
+            app.manage(state);
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            commands::list_meetings,
+            commands::get_meeting,
+            commands::get_transcript,
+            commands::start_meeting,
+            commands::stop_meeting,
+            commands::save_notes,
+            commands::rename_meeting,
+            commands::show_in_finder,
+            commands::get_recording_state,
+            commands::list_models,
+            commands::download_model,
+            commands::cancel_download,
+            commands::delete_model,
+            commands::get_settings,
+            commands::update_settings,
+            commands::get_permissions,
+            commands::request_permission,
+        ])
+        .build(tauri::generate_context!())
+        .expect("failed to build Mneme");
+
+    app.run(|handle, event| {
+        // Quit while recording: stop the session and free the Whisper engine
+        // before the process ends (an engine alive at exit aborts it).
+        // `ExitRequested` comes when the last window closes, `Exit` on every
+        // way out including Quit from the menu; the call is safe twice.
+        if matches!(event, RunEvent::ExitRequested { .. } | RunEvent::Exit)
+            && let Some(state) = handle.try_state::<AppState>()
+            && let Ok(core) = &state.core
+        {
+            core.shutdown();
+        }
+    });
 }
 
 #[cfg(test)]
@@ -48,6 +159,17 @@ mod tests {
             }
         }
         assert!(config["app"]["security"].get("devCsp").is_none());
+    }
+
+    /// Recovery assumes one running copy per meetings root.
+    #[test]
+    fn a_second_copy_does_not_get_the_instance_lock() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let first = super::instance_lock(dir.path()).unwrap();
+        assert!(first.is_some());
+        assert!(super::instance_lock(dir.path()).unwrap().is_none());
+        drop(first);
+        assert!(super::instance_lock(dir.path()).unwrap().is_some());
     }
 
     #[test]
