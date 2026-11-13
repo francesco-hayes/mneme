@@ -1,19 +1,21 @@
 //! The Mneme desktop app: the window and the commands behind it (PRD 06).
 //!
 //! `app.rs` is the app's logic with no Tauri in it, `commands.rs` exposes it
-//! to the window, `host.rs` is the real audio, model and Finder side.
+//! to the window, `host.rs` is the real audio, model and Finder side,
+//! `tray.rs` is the menu bar icon.
 
 use std::fs::{File, TryLockError};
 use std::io;
 use std::path::Path;
 use std::sync::Arc;
 
-use tauri::{AppHandle, Manager, RunEvent};
+use tauri::{AppHandle, Manager, RunEvent, WindowEvent};
 
 pub mod app;
 mod commands;
 pub mod dto;
 mod host;
+mod tray;
 
 use commands::AppState;
 
@@ -80,7 +82,23 @@ pub fn run() {
                 eprintln!("mneme: {error}");
             }
             app.manage(state);
+            // Without the menu bar icon the window still does everything.
+            if let Err(error) = tray::setup(app.handle()) {
+                eprintln!("mneme: menu bar icon: {error}");
+            }
             Ok(())
+        })
+        // Closing the main window hides it: the app, and a recording, carry
+        // on in the menu bar. Open Mneme or the Dock icon brings it back.
+        .on_window_event(|window, event| {
+            if let WindowEvent::CloseRequested { api, .. } = event
+                && window.label() == tray::MAIN_WINDOW
+            {
+                api.prevent_close();
+                if let Err(error) = window.hide() {
+                    eprintln!("mneme: hiding the main window: {error}");
+                }
+            }
         })
         .invoke_handler(tauri::generate_handler![
             commands::list_meetings,
@@ -104,17 +122,27 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("failed to build Mneme");
 
-    app.run(|handle, event| {
-        // Quit while recording: stop the session and free the Whisper engine
-        // before the process ends (an engine alive at exit aborts it).
-        // `ExitRequested` comes when the last window closes, `Exit` on every
-        // way out including Quit from the menu; the call is safe twice.
-        if matches!(event, RunEvent::ExitRequested { .. } | RunEvent::Exit)
-            && let Some(state) = handle.try_state::<AppState>()
-            && let Ok(core) = &state.core
-        {
-            core.shutdown();
+    app.run(|handle, event| match event {
+        // No window left is not a reason to quit: the menu bar icon is still
+        // there. An exit asked for in code (Quit Mneme) carries a code and
+        // goes through.
+        RunEvent::ExitRequested {
+            code: None, api, ..
+        } => api.prevent_exit(),
+        // Every way out, Quit Mneme and Cmd+Q included: stop the session and
+        // free the Whisper engine before the process ends (an engine alive
+        // at exit aborts it). `shutdown` is final, so it runs only here.
+        RunEvent::Exit => {
+            if let Some(state) = handle.try_state::<AppState>()
+                && let Ok(core) = &state.core
+            {
+                core.shutdown();
+            }
         }
+        // A click on the Dock icon while the window is hidden.
+        #[cfg(target_os = "macos")]
+        RunEvent::Reopen { .. } => tray::show_main_window(handle),
+        _ => {}
     });
 }
 

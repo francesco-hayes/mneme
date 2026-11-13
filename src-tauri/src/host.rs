@@ -17,6 +17,7 @@ use tauri::{AppHandle, Emitter};
 
 use crate::app::{Host, PermissionKind, Result};
 use crate::dto;
+use crate::tray;
 
 /// Event carrying a `RecordingState`: on every change, and about once a
 /// second while a meeting records.
@@ -53,11 +54,17 @@ impl Host for TauriHost {
         if let Err(error) = self.app.emit(RECORDING_STATE_EVENT, state.clone()) {
             eprintln!("mneme: sending the recording state: {error}");
         }
+        // The menu bar icon follows the same state as the window.
+        tray::recording_state_changed(&self.app, state);
     }
 
     fn download_progress(&self, progress: &dto::DownloadProgress) {
         if let Err(error) = self.app.emit(DOWNLOAD_PROGRESS_EVENT, progress.clone()) {
             eprintln!("mneme: sending download progress: {error}");
+        }
+        // A download that ended may have installed the first model.
+        if progress.state != "downloading" {
+            tray::refresh(&self.app);
         }
     }
 

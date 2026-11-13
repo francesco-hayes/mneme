@@ -14,7 +14,8 @@ name = "mneme_lib"
 tauri-build = { version = "2.7.4", features = [] }
 
 [dependencies]
-tauri = { version = "2.12.5", features = [] }
+# `tray-icon`: the menu bar icon (issue 022). Part of Tauri itself, no plugin.
+tauri = { version = "2.12.5", features = ["tray-icon"] }
 # The contract types the commands return.
 serde = { workspace = true }
 # The area crates the commands connect to the window.
