@@ -3,7 +3,7 @@
 use std::fs::{self, OpenOptions};
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use crate::error::{Error, Result};
 use crate::frontmatter::NotesFile;
@@ -29,8 +29,10 @@ use crate::time::StartTime;
 pub struct Store {
     root: PathBuf,
     /// Held across each read-change-write of a `notes.md` and each folder
-    /// rename, so concurrent calls cannot lose one another's changes.
-    lock: Mutex<()>,
+    /// rename, so concurrent calls cannot lose one another's changes. Shared
+    /// with the transcript writers this store hands out, which take it for
+    /// each append and for the sort at the end.
+    lock: Arc<Mutex<()>>,
 }
 
 /// What a new meeting starts with.
@@ -64,7 +66,7 @@ impl Store {
         fs::create_dir_all(&root).map_err(|err| Error::io(&root, err))?;
         Ok(Self {
             root,
-            lock: Mutex::new(()),
+            lock: Arc::new(Mutex::new(())),
         })
     }
 
@@ -240,22 +242,38 @@ impl Store {
     /// Finds the folder whose `notes.md` carries this id. Folders that have
     /// no readable frontmatter are passed over. If the id was copied into
     /// several folders, the first by name wins.
-    fn find_folder(&self, id: &MeetingId) -> Result<PathBuf> {
-        let entries = fs::read_dir(&self.root).map_err(|err| Error::io(&self.root, err))?;
-        entries
-            .filter_map(|entry| entry.ok())
-            .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
-            .map(|entry| entry.path())
-            .filter(|folder| folder_has_id(folder, id))
-            .min()
-            .ok_or_else(|| Error::MeetingNotFound { id: id.clone() })
+    pub(crate) fn find_folder(&self, id: &MeetingId) -> Result<PathBuf> {
+        find_folder(&self.root, id)
     }
 
-    fn lock(&self) -> MutexGuard<'_, ()> {
-        // The mutex guards no data, so a panic in another holder leaves
-        // nothing half-updated behind it.
-        self.lock.lock().unwrap_or_else(PoisonError::into_inner)
+    pub(crate) fn lock(&self) -> MutexGuard<'_, ()> {
+        lock(&self.lock)
     }
+
+    /// The store lock itself, for a value that outlives the borrow of the
+    /// store, such as a transcript writer on the pipeline's worker thread.
+    pub(crate) fn lock_handle(&self) -> Arc<Mutex<()>> {
+        Arc::clone(&self.lock)
+    }
+}
+
+/// Takes a store lock.
+pub(crate) fn lock(lock: &Mutex<()>) -> MutexGuard<'_, ()> {
+    // The mutex guards no data, so a panic in another holder leaves nothing
+    // half-updated behind it.
+    lock.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// [`Store::find_folder`] for a caller that has the root but not the store.
+pub(crate) fn find_folder(root: &Path, id: &MeetingId) -> Result<PathBuf> {
+    let entries = fs::read_dir(root).map_err(|err| Error::io(root, err))?;
+    entries
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
+        .map(|entry| entry.path())
+        .filter(|folder| folder_has_id(folder, id))
+        .min()
+        .ok_or_else(|| Error::MeetingNotFound { id: id.clone() })
 }
 
 /// A `notes.md` read from disk: its path, its exact text, the parsed file and

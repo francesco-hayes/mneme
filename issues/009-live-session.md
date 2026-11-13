@@ -22,6 +22,9 @@ One `Session` that runs a meeting: two sources in, labeled transcript lines appe
 - From 005: `Transcriber::transcribe(&self, samples, &Language) -> Result<Vec<TextSpan>, TranscribeError>`; `TextSpan::into_segment(speaker, chunk_start_ms)` gives the `Segment`. `FakeTranscriber` scripts text, errors and a per-call delay.
 - From 005: the first load of a model can take about 7 s while Metal compiles shaders. Loading stays the caller's job, off the UI thread.
 
+- From 011: take the writer from `Store::transcript_writer(&id)` (it is `Send + 'static`) and move it to the worker; the sink adapter is `append(&segment)` and `finalize()`. `append` syncs to disk (about 4 ms). Do not retry an `append` that errored: the line may already be written. `finalize` and the store's `finish_meeting` can run in either order. For `MNEME_KEEP_AUDIO`, take the folder from `store.meeting(&id)`, not `writer.path()`.
+- From 002: the frame channel is `std::sync::mpsc` (`frame_channel()`); clone one sender into both sources. A source drops its sender when it ends, so the receiver's iterator ends when both are done. Poll `is_running()` and `take_errors()` for failures.
+
 ## Acceptance criteria
 
 All with fake sources and a fake transcriber unless noted:

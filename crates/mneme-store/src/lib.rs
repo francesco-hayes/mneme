@@ -30,9 +30,11 @@
 //! - `time`: [`StartTime`].
 //! - `safe_write`: [`safe_write`], the temp-file-and-rename helper every
 //!   whole-file write goes through.
+//! - `transcript`: [`TranscriptWriter`], which appends one line per segment
+//!   and sorts the file at the end, and [`Transcript`], the parser.
 //!
-//! The transcript, the notes body and note timeline, listing and recovery,
-//! and the settings file each get their own module next to these.
+//! The notes body and note timeline, listing and recovery, and the settings
+//! file each get their own module next to these.
 
 mod error;
 mod frontmatter;
@@ -41,6 +43,7 @@ mod naming;
 mod safe_write;
 mod store;
 mod time;
+mod transcript;
 
 pub use error::{Error, FrontmatterError, Result};
 pub use meeting::{
@@ -50,3 +53,7 @@ pub use naming::{DEFAULT_FOLDER_TITLE, sanitize_title};
 pub use safe_write::{is_temp_file_name, safe_write};
 pub use store::{FinishedMeeting, NewMeeting, Store};
 pub use time::{ParseStartTimeError, StartTime};
+pub use transcript::{
+    Transcript, TranscriptLine, TranscriptStats, TranscriptWriter, count_transcript_lines,
+    format_transcript_line,
+};
