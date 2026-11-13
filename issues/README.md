@@ -25,13 +25,13 @@ Statuses: `todo`, `in progress`, `done`, `blocked`, `paused` (stopped part-way o
 | [016](016-home-screen.md) | Home screen | 05 | ui | 015 | done | — |
 | [017](017-meeting-live-view.md) | Meeting live view and editor | 05 | ui | 016 | done | — |
 | [018](018-meeting-after-view.md) | Meeting after view and transcript pane | 05 | ui | 017 | done | — |
-| [019](019-settings-screen.md) | Settings screen | 05 | ui | 018 | in progress | — |
-| [020](020-first-run.md) | First run | 05 | ui | 019 | todo | — |
+| [019](019-settings-screen.md) | Settings screen | 05 | ui | 018 | done | — |
+| [020](020-first-run.md) | First run | 05 | ui | 019 | in progress | — |
 | [021](021-tauri-commands.md) | Tauri commands and events | 06 | app | 009, 007, 014 | todo | open |
 | [022](022-menu-bar-icon.md) | Menu bar icon | 06 | app | 021 | todo | open |
 | [023](023-global-shortcut.md) | Global shortcut | 06 | app | 022 | todo | open |
 | [024](024-permissions-flow.md) | Permissions flow | 06 | app | 023 | todo | open |
-| [025](025-signing-and-release.md) | Signing, notarization, local-only audit | 06 | release | 021 | todo | open |
+| [025](025-signing-and-release.md) | Signing, notarization, local-only audit | 06 | release | 021 | in progress | open |
 
 ## Lanes
 

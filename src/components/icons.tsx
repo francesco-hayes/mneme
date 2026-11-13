@@ -90,3 +90,12 @@ export function TranscriptIcon() {
     </Icon>
   );
 }
+
+/** A tick: the chosen item in a list, or something that is in place. */
+export function CheckIcon() {
+  return (
+    <Icon>
+      <path d="m3.5 8.5 3 3 6-7" />
+    </Icon>
+  );
+}

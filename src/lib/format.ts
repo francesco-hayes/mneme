@@ -171,3 +171,26 @@ export function formatLineCount(count: number, locale?: string): string {
   }
   return `${plainSpaces(format.format(count))} lines`;
 }
+
+const sizeFormats = new Map<string | undefined, Intl.NumberFormat>();
+
+/**
+ * A file size the way Finder shows it: decimal units (1 MB is 1,000,000
+ * bytes) and three significant digits. `77.7 MB`, `148 MB`, `1.53 GB`,
+ * `3.1 GB`; `0 KB` for nothing.
+ */
+export function formatBytes(bytes: number, locale?: string): string {
+  const size = Number.isFinite(bytes) ? Math.max(0, bytes) : 0;
+  let format = sizeFormats.get(locale);
+  if (format === undefined) {
+    format = new Intl.NumberFormat(locale, { maximumSignificantDigits: 3 });
+    sizeFormats.set(locale, format);
+  }
+  const [value, unit] =
+    size >= 999_500_000
+      ? [size / 1e9, "GB"]
+      : size >= 999_500
+        ? [size / 1e6, "MB"]
+        : [Math.round(size / 1e3), "KB"];
+  return `${plainSpaces(format.format(value))} ${unit}`;
+}

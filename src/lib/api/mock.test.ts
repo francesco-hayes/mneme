@@ -283,6 +283,36 @@ describe("recording", () => {
 });
 
 describe("models and downloads", () => {
+  test("the catalog is the real one: ten models, smallest first, four English-only", async () => {
+    const models = await create().listModels();
+
+    expect(models.map((m) => m.id)).toEqual([
+      "tiny",
+      "tiny.en",
+      "base",
+      "base.en",
+      "small",
+      "small.en",
+      "medium",
+      "medium.en",
+      "large-v3-turbo",
+      "large-v3",
+    ]);
+    const sizes = models.map((m) => m.sizeBytes);
+    expect(sizes).toEqual([...sizes].sort((a, b) => a - b));
+    expect(sizes[0]).toBe(77_691_713);
+    expect(sizes.at(-1)).toBe(3_095_033_483);
+    expect(models.filter((m) => m.englishOnly).map((m) => m.id)).toEqual([
+      "tiny.en",
+      "base.en",
+      "small.en",
+      "medium.en",
+    ]);
+    expect(models.every((m) => m.englishOnly === m.id.endsWith(".en"))).toBe(
+      true,
+    );
+  });
+
   test("the catalog has one model installed by default, and none on request", async () => {
     const one = await create().listModels();
     expect(one).toHaveLength(MOCK_MODEL_CATALOG.length);
@@ -372,6 +402,39 @@ describe("models and downloads", () => {
 
     // Cancelling when nothing is downloading does nothing, and a retry works.
     await api.cancelDownload("medium");
+    await api.downloadModel("medium");
+    expect(events.at(-1)?.state).toBe("downloading");
+  });
+
+  test("with cancelMs, cancelled arrives that long after cancelDownload returns", async () => {
+    const api = create({ download: { cancelMs: 3000 } });
+    const events: DownloadProgress[] = [];
+    api.onDownloadProgress((p) => events.push(p));
+
+    await api.downloadModel("medium");
+    await vi.advanceTimersByTimeAsync(5 * 150);
+    const before = events.length;
+    await api.cancelDownload("medium");
+
+    // The call has returned; the download has stopped but has not said so.
+    expect(events).toHaveLength(before);
+    await vi.advanceTimersByTimeAsync(2999);
+    expect(events).toHaveLength(before);
+    await expect(api.downloadModel("medium")).rejects.toThrow(
+      "already downloading",
+    );
+    // A second cancel changes nothing.
+    await api.cancelDownload("medium");
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(events).toHaveLength(before + 1);
+    expect(events.at(-1)).toMatchObject({
+      modelId: "medium",
+      state: "cancelled",
+    });
+    expect(
+      (await api.listModels()).find((m) => m.id === "medium")?.installed,
+    ).toBe(false);
     await api.downloadModel("medium");
     expect(events.at(-1)?.state).toBe("downloading");
   });
@@ -594,5 +657,8 @@ describe("scenarios", () => {
       latencyMs: 300,
     });
     expect(mockOptionsFromSearch("?mock=toString&mockLatency=abc")).toEqual({});
+    expect(mockOptionsFromSearch("?mockCancelDelay=3000")).toEqual({
+      download: { cancelMs: 3000 },
+    });
   });
 });

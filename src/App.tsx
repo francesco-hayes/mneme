@@ -4,6 +4,7 @@ import { useLoad } from "./lib/useLoad";
 import { AppShell } from "./shell/AppShell";
 import styles from "./shell/AppShell.module.css";
 import { startupRoute } from "./shell/startup";
+import { ModelLibraryProvider } from "./state/ModelLibraryProvider";
 import { NavigationProvider } from "./state/NavigationProvider";
 import { RecordingProvider } from "./state/RecordingProvider";
 
@@ -36,7 +37,9 @@ function Startup() {
 export default function App() {
   return (
     <RecordingProvider>
-      <Startup />
+      <ModelLibraryProvider>
+        <Startup />
+      </ModelLibraryProvider>
     </RecordingProvider>
   );
 }

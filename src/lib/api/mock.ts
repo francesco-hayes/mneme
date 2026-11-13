@@ -60,8 +60,19 @@ export interface MockOptions {
   secondsPerTranscriptLine?: number;
   /** How long `stopping` lasts. 0 completes the stop without a timer. Default 600. */
   stopDelayMs?: number;
-  /** A download takes `steps` progress events `stepMs` apart, then `verifyMs` of verifying. Default 20, 150, 600. */
-  download?: { steps?: number; stepMs?: number; verifyMs?: number };
+  /**
+   * A download takes `steps` progress events `stepMs` apart, then `verifyMs`
+   * of verifying. Default 20, 150, 600. `cancelMs` is how long after
+   * `cancelDownload` returns the `cancelled` event arrives: 0 (the default)
+   * sends it before the call returns; the real backend takes a moment, and up
+   * to about 35 s while a connection is still being set up.
+   */
+  download?: {
+    steps?: number;
+    stepMs?: number;
+    verifyMs?: number;
+    cancelMs?: number;
+  };
 }
 
 /** Test and dev controls. None of this exists on the real API. */
@@ -106,7 +117,8 @@ export type MockScenario = keyof typeof mockScenarios;
 /**
  * Reads mock options from a URL query string, so the browser dev server can
  * start in any scenario: `?mock=first-run`, `?mock=empty`,
- * `?mock=long-transcript`, and `&mockLatency=300` to slow every call down.
+ * `?mock=long-transcript`, `&mockLatency=300` to slow every call down, and
+ * `&mockCancelDelay=3000` to make a cancelled download take that long to stop.
  */
 export function mockOptionsFromSearch(search: string): MockOptions {
   const params = new URLSearchParams(search);
@@ -118,6 +130,10 @@ export function mockOptionsFromSearch(search: string): MockOptions {
   const latency = Number(params.get("mockLatency"));
   if (Number.isFinite(latency) && latency > 0) {
     options.latencyMs = latency;
+  }
+  const cancelDelay = Number(params.get("mockCancelDelay"));
+  if (Number.isFinite(cancelDelay) && cancelDelay > 0) {
+    options.download = { ...options.download, cancelMs: cancelDelay };
   }
   return options;
 }
@@ -140,6 +156,8 @@ interface ActiveDownload {
   totalBytes: number;
   stepBytes: number;
   failWith: string | null;
+  /** True from `cancelDownload` until the `cancelled` event has been sent. */
+  cancelling: boolean;
   timer: ReturnType<typeof setTimeout> | null;
 }
 
@@ -162,6 +180,7 @@ export function createMockApi(initialOptions: MockOptions = {}): MockApi {
   let downloadSteps: number;
   let downloadStepMs: number;
   let downloadVerifyMs: number;
+  let downloadCancelMs: number;
   let permissionResponses: Record<PermissionKind, Permission>;
 
   // State, replaced by `init`.
@@ -219,6 +238,7 @@ export function createMockApi(initialOptions: MockOptions = {}): MockApi {
     downloadSteps = Math.max(1, options.download?.steps ?? 20);
     downloadStepMs = options.download?.stepMs ?? 150;
     downloadVerifyMs = options.download?.verifyMs ?? 600;
+    downloadCancelMs = Math.max(0, options.download?.cancelMs ?? 0);
     permissionResponses = {
       microphone: "granted",
       systemAudio: "granted",
@@ -529,6 +549,7 @@ export function createMockApi(initialOptions: MockOptions = {}): MockApi {
           totalBytes: model.sizeBytes,
           stepBytes: Math.ceil(model.sizeBytes / downloadSteps),
           failWith: nextDownloadFailure,
+          cancelling: false,
           timer: setTimeout(() => stepDownload(id), downloadStepMs),
         };
         nextDownloadFailure = null;
@@ -544,15 +565,25 @@ export function createMockApi(initialOptions: MockOptions = {}): MockApi {
     cancelDownload: (id) =>
       call("cancelDownload", () => {
         const download = downloads.get(id);
-        if (!download) return;
+        if (!download || download.cancelling) return;
         if (download.timer !== null) clearTimeout(download.timer);
-        downloads.delete(id);
-        emitDownload({
-          modelId: id,
-          receivedBytes: download.receivedBytes,
-          totalBytes: download.totalBytes,
-          state: "cancelled",
-        });
+        const finish = () => {
+          downloads.delete(id);
+          emitDownload({
+            modelId: id,
+            receivedBytes: download.receivedBytes,
+            totalBytes: download.totalBytes,
+            state: "cancelled",
+          });
+        };
+        if (downloadCancelMs <= 0) {
+          finish();
+          return;
+        }
+        // Like the real backend: the call returns at once, the download stops
+        // a little later, and until then the same model cannot be started.
+        download.cancelling = true;
+        download.timer = setTimeout(finish, downloadCancelMs);
       }),
 
     deleteModel: (id) =>

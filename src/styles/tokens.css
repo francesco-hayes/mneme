@@ -70,6 +70,9 @@
   --color-control-border: rgb(0 0 0 / 0.16);
   --color-control-pressed: #f0f0f0;
   --shadow-control: 0 0.5px 1px rgb(0 0 0 / 0.12);
+  /* A grouped box of settings rows. */
+  --color-group: rgb(0 0 0 / 0.03);
+  --color-group-border: rgb(0 0 0 / 0.07);
   /* Accent: macOS blue unless the browser exposes the system accent (below). */
   --color-accent: #007aff;
   --color-on-accent: #ffffff;
@@ -93,6 +96,8 @@
     --color-control-border: rgb(255 255 255 / 0.08);
     --color-control-pressed: rgb(255 255 255 / 0.2);
     --shadow-control: 0 0.5px 1px rgb(0 0 0 / 0.3);
+    --color-group: rgb(255 255 255 / 0.04);
+    --color-group-border: rgb(255 255 255 / 0.07);
     --color-accent: #0a84ff;
     --color-on-accent: #ffffff;
     --color-recording: #ff453a;

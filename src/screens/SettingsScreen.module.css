@@ -1,0 +1,10 @@
+/* Shown with `appears-late` (styles/base.css): no flash of "Loading" each
+   time Settings is opened. */
+.loading {
+  padding: var(--space-2) var(--space-3);
+  color: var(--color-text-secondary);
+}
+
+.loadError {
+  padding: var(--space-2) var(--space-3);
+}

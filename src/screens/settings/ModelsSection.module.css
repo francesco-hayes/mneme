@@ -1,0 +1,54 @@
+/* "Installed", "Available to download": a small label over each box. */
+.groupLabel {
+  margin-top: var(--space-4);
+  padding: 0 var(--space-3);
+  color: var(--color-text-secondary);
+  font-size: var(--text-small);
+  font-weight: var(--weight-medium);
+}
+
+.groupLabel:first-of-type {
+  margin-top: var(--space-3);
+}
+
+.empty,
+.caption {
+  padding: 0 var(--space-3);
+  color: var(--color-text-secondary);
+  font-size: var(--text-small);
+}
+
+.empty {
+  margin-top: var(--space-2);
+}
+
+.caption {
+  margin-top: 6px;
+}
+
+.message {
+  margin-top: var(--space-2);
+  padding: 0 var(--space-3);
+}
+
+/* The system's radio button, in the accent color. */
+.radio {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--color-accent);
+}
+
+/* The question under the row, with its two answers at the end. */
+.confirm {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.question {
+  flex: 1;
+  min-width: 0;
+  color: var(--color-text);
+  font-size: var(--text-small);
+}

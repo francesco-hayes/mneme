@@ -17,24 +17,40 @@ export interface MockMeetingSeed {
 }
 
 /**
- * The mock's model catalog. Sizes are the file sizes listed by the model
- * source (ggerganov/whisper.cpp on Hugging Face) on 2026-11-12; ids, names and
- * notes are placeholders until issue 007 defines the real catalog.
+ * The mock's model catalog: the same ten models, in the same order (smallest
+ * file first), as the real catalog in
+ * `crates/mneme-transcribe/src/models/catalog.rs`. Ids, names, sizes and notes
+ * are copied from it; `englishOnly` is true for the `.en` models. Keep the two
+ * in step by hand when the real catalog changes.
  */
 export const MOCK_MODEL_CATALOG: readonly Omit<ModelInfo, "installed">[] = [
+  {
+    id: "tiny",
+    name: "Tiny",
+    sizeBytes: 77_691_713,
+    note: "Fastest and smallest. Least accurate.",
+    englishOnly: false,
+  },
   {
     id: "tiny.en",
     name: "Tiny (English)",
     sizeBytes: 77_704_715,
-    note: "Fastest. Misses more words.",
+    note: "Fastest and smallest. Least accurate. English only.",
     englishOnly: true,
   },
   {
     id: "base",
     name: "Base",
     sizeBytes: 147_951_465,
-    note: "Fast. Fine for clear audio.",
+    note: "Fast. More accurate than Tiny.",
     englishOnly: false,
+  },
+  {
+    id: "base.en",
+    name: "Base (English)",
+    sizeBytes: 147_964_211,
+    note: "Fast. More accurate than Tiny. English only.",
+    englishOnly: true,
   },
   {
     id: "small",
@@ -44,17 +60,38 @@ export const MOCK_MODEL_CATALOG: readonly Omit<ModelInfo, "installed">[] = [
     englishOnly: false,
   },
   {
+    id: "small.en",
+    name: "Small (English)",
+    sizeBytes: 487_614_201,
+    note: "Balanced speed and accuracy. English only.",
+    englishOnly: true,
+  },
+  {
     id: "medium",
     name: "Medium",
     sizeBytes: 1_533_763_059,
-    note: "More accurate. Slower.",
+    note: "More accurate than Small. Slower.",
     englishOnly: false,
+  },
+  {
+    id: "medium.en",
+    name: "Medium (English)",
+    sizeBytes: 1_533_774_781,
+    note: "More accurate than Small. Slower. English only.",
+    englishOnly: true,
   },
   {
     id: "large-v3-turbo",
     name: "Large v3 Turbo",
     sizeBytes: 1_624_555_275,
-    note: "Most accurate here. Needs a recent Mac.",
+    note: "Nearly as accurate as Large v3, and faster.",
+    englishOnly: false,
+  },
+  {
+    id: "large-v3",
+    name: "Large v3",
+    sizeBytes: 3_095_033_483,
+    note: "Most accurate. Slowest and largest.",
     englishOnly: false,
   },
 ];

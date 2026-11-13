@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
+  formatBytes,
   formatDuration,
   formatElapsed,
   formatFullDate,
@@ -123,4 +124,30 @@ test("counts transcript lines in words", () => {
   expect(formatLineCount(214, "en-US")).toBe("214 lines");
   expect(formatLineCount(2000, "en-US")).toBe("2,000 lines");
   expect(formatLineCount(2000, "de-DE")).toBe("2.000 lines");
+});
+
+describe("formatBytes", () => {
+  test("shows the catalog's sizes the way Finder would", () => {
+    expect(formatBytes(77_691_713, "en-US")).toBe("77.7 MB");
+    expect(formatBytes(147_951_465, "en-US")).toBe("148 MB");
+    expect(formatBytes(487_601_967, "en-US")).toBe("488 MB");
+    expect(formatBytes(1_533_763_059, "en-US")).toBe("1.53 GB");
+    expect(formatBytes(1_624_555_275, "en-US")).toBe("1.62 GB");
+    expect(formatBytes(3_095_033_483, "en-US")).toBe("3.1 GB");
+  });
+
+  test("small and awkward values", () => {
+    expect(formatBytes(0, "en-US")).toBe("0 KB");
+    expect(formatBytes(512_000, "en-US")).toBe("512 KB");
+    expect(formatBytes(1_000_000, "en-US")).toBe("1 MB");
+    // Never "1,000 MB": the unit moves up where the rounding does.
+    expect(formatBytes(999_700_000, "en-US")).toBe("1 GB");
+    expect(formatBytes(999_400_000, "en-US")).toBe("999 MB");
+    expect(formatBytes(-5, "en-US")).toBe("0 KB");
+    expect(formatBytes(Number.NaN, "en-US")).toBe("0 KB");
+  });
+
+  test("uses the locale's decimal mark", () => {
+    expect(formatBytes(1_533_763_059, "de-DE")).toBe("1,53 GB");
+  });
 });

@@ -1,0 +1,119 @@
+.list {
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  border: var(--hairline) solid var(--color-group-border);
+  border-radius: var(--radius-panel);
+  background: var(--color-group);
+  list-style: none;
+}
+
+.row {
+  position: relative;
+  padding: var(--space-2) var(--space-3);
+}
+
+/* A hairline between rows that stops short of the box's edges. */
+.row + .row::before {
+  position: absolute;
+  top: 0;
+  right: var(--space-3);
+  left: var(--space-3);
+  border-top: var(--hairline) solid var(--color-separator);
+  content: "";
+}
+
+.line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 36px;
+}
+
+.leading {
+  display: flex;
+  flex: none;
+  align-items: center;
+}
+
+.text {
+  flex: 1;
+  min-width: 0;
+}
+
+.nameLine {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.name {
+  overflow: hidden;
+  font-weight: var(--weight-medium);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tag {
+  flex: none;
+  padding: 0 6px;
+  border-radius: var(--radius-small);
+  background: var(--color-hover);
+  color: var(--color-text-secondary);
+  font-size: var(--text-caption);
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.badge {
+  background: var(--color-accent-soft);
+  color: var(--color-text);
+}
+
+.note {
+  color: var(--color-text-secondary);
+  font-size: var(--text-small);
+}
+
+.size {
+  flex: none;
+  color: var(--color-text-secondary);
+  font-size: var(--text-small);
+  font-variant-numeric: tabular-nums;
+}
+
+.actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-1);
+  /* Wide enough for Download, so the sizes before it line up down the list. */
+  min-width: 76px;
+}
+
+.installed {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--color-text-secondary);
+  font-size: var(--text-small);
+}
+
+/* Under the row's line: progress, an error, a confirmation. */
+.below {
+  margin: var(--space-1) 0 var(--space-1);
+}
+
+.error {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  color: var(--color-danger);
+  font-size: var(--text-small);
+}
+
+.error > svg {
+  flex: none;
+  margin-top: 1px;
+}
