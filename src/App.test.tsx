@@ -76,7 +76,7 @@ describe("navigation", () => {
     render(<App />);
 
     const list = await screen.findByRole("list", { name: "Meetings" });
-    await user.click(within(list).getByRole("button", { name: "Standup" }));
+    await user.click(within(list).getByRole("button", { name: /^Standup/ }));
     expect(await heading("Standup")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Back" }));
@@ -89,7 +89,7 @@ describe("navigation", () => {
 
     const list = await screen.findByRole("list", { name: "Meetings" });
     await user.click(
-      within(list).getByRole("button", { name: "Design review" }),
+      within(list).getByRole("button", { name: /^Design review/ }),
     );
     await heading("Design review");
     await user.click(screen.getByRole("button", { name: "Settings" }));
@@ -108,7 +108,7 @@ describe("navigation", () => {
     render(<App />);
 
     const list = await screen.findByRole("list", { name: "Meetings" });
-    await user.click(within(list).getByRole("button", { name: "Standup" }));
+    await user.click(within(list).getByRole("button", { name: /^Standup/ }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Could not open this meeting: The folder was moved.",

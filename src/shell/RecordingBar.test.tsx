@@ -79,7 +79,7 @@ test("an older meeting is not the live one: the link stays", async () => {
   await click("Back");
   fireEvent.click(
     within(screen.getByRole("list", { name: "Meetings" })).getByRole("button", {
-      name: "Standup",
+      name: /^Standup/,
     }),
   );
   await advance();

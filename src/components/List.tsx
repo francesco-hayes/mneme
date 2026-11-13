@@ -1,10 +1,33 @@
 import type { ComponentProps, ReactNode } from "react";
 import { cx } from "../lib/cx";
 import styles from "./List.module.css";
+import { moveListFocus } from "./listFocus";
 
-/** A list of `ListRow`s. Takes every `<ul>` attribute. */
-export function List({ className, ...rest }: ComponentProps<"ul">) {
-  return <ul className={cx(styles.list, className)} {...rest} />;
+/**
+ * A list of `ListRow`s. Takes every `<ul>` attribute. With focus on a row that
+ * opens something, the up and down arrow keys move to the row before or after
+ * it, and Enter opens it.
+ */
+export function List({ className, onKeyDown, ...rest }: ComponentProps<"ul">) {
+  return (
+    <ul
+      className={cx(styles.list, className)}
+      onKeyDown={(event) => {
+        onKeyDown?.(event);
+        if (event.defaultPrevented) return;
+        if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) {
+          return;
+        }
+        const by =
+          event.key === "ArrowDown" ? 1 : event.key === "ArrowUp" ? -1 : null;
+        if (by !== null && moveListFocus(event.currentTarget, by)) {
+          // Keeps the arrow key from also scrolling the screen.
+          event.preventDefault();
+        }
+      }}
+      {...rest}
+    />
+  );
 }
 
 export interface ListRowProps {

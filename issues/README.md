@@ -22,8 +22,8 @@ Statuses: `todo`, `in progress`, `done`, `blocked`. An issue is `done` when its 
 | [013](013-listing-and-recovery.md) | Meeting list and crash recovery | 04 | store | 012 | todo | — |
 | [014](014-settings-file.md) | Settings file | 04 | store | 013 | todo | — |
 | [015](015-ui-shell.md) | UI shell: routing, theme, recording bar | 05 | ui | 001 | done | — |
-| [016](016-home-screen.md) | Home screen | 05 | ui | 015 | in progress | — |
-| [017](017-meeting-live-view.md) | Meeting live view and editor | 05 | ui | 016 | todo | — |
+| [016](016-home-screen.md) | Home screen | 05 | ui | 015 | done | — |
+| [017](017-meeting-live-view.md) | Meeting live view and editor | 05 | ui | 016 | in progress | — |
 | [018](018-meeting-after-view.md) | Meeting after view and transcript pane | 05 | ui | 017 | todo | — |
 | [019](019-settings-screen.md) | Settings screen | 05 | ui | 018 | todo | — |
 | [020](020-first-run.md) | First run | 05 | ui | 019 | todo | — |

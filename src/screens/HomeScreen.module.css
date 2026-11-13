@@ -1,0 +1,51 @@
+/* Errors line up with the text of the rows under them. */
+.error {
+  margin-bottom: var(--space-3);
+  padding: 0 var(--space-2);
+}
+
+/* Why New meeting is off, above the list. */
+.notice {
+  margin-bottom: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-control);
+  background: var(--color-hover);
+  color: var(--color-text-secondary);
+  font-size: var(--text-small);
+}
+
+/* Reading the list takes a moment at most, so the text only appears if it
+   drags on: no flash of "Loading" each time Home is shown. */
+.loading {
+  padding: var(--space-2);
+  color: var(--color-text-secondary);
+  animation: appear 0s linear 400ms both;
+}
+
+@keyframes appear {
+  from {
+    visibility: hidden;
+  }
+  to {
+    visibility: visible;
+  }
+}
+
+.interrupted {
+  color: var(--color-warning);
+}
+
+.live {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-text);
+}
+
+.liveDot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-recording);
+}

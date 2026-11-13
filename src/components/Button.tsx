@@ -5,10 +5,11 @@ import styles from "./Button.module.css";
 export interface ButtonProps extends ComponentProps<"button"> {
   /**
    * `default` is the standard push button, `primary` the one main action of a
-   * screen (accent colored), `danger` a destructive action, and `plain` a
-   * borderless button for quiet actions inside rows and bars.
+   * screen (accent colored), `danger` a destructive action, `plain` a
+   * borderless button for quiet actions inside rows and bars, and `link`
+   * underlined text that sits inside a sentence and leads to another screen.
    */
-  variant?: "default" | "primary" | "danger" | "plain";
+  variant?: "default" | "primary" | "danger" | "plain" | "link";
   size?: "regular" | "small";
 }
 

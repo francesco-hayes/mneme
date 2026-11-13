@@ -12,4 +12,5 @@ export {
 } from "./icons";
 export { InlineError, type InlineErrorProps } from "./InlineError";
 export { List, ListRow, type ListRowProps } from "./List";
+export { focusListRow } from "./listFocus";
 export { Screen, type ScreenProps } from "./Screen";

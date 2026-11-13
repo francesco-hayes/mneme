@@ -59,3 +59,25 @@
 .plain:active:not(:disabled) {
   background: var(--color-pressed);
 }
+
+/* Text in a sentence: no box, and the size and color of the words around it. */
+.link {
+  display: inline;
+  height: auto;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-small);
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.link:hover:not(:disabled),
+.link:active:not(:disabled) {
+  background: transparent;
+  color: var(--color-text);
+}
