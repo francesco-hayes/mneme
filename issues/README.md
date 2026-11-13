@@ -2,7 +2,7 @@
 
 Local issue tracker. One file per issue; the status line at the top of each file is the source of truth, and this table mirrors it.
 
-Statuses: `todo`, `in progress`, `done`, `blocked`. An issue is `done` when its acceptance criteria pass. Manual checks that need a real call, a permission prompt or a signing account are listed in each issue and tracked separately in the last column.
+Statuses: `todo`, `in progress`, `done`, `blocked`, `paused` (stopped part-way on purpose; the issue says what exists). An issue is `done` when its acceptance criteria pass. Manual checks that need a real call, a permission prompt or a signing account are listed in each issue and tracked separately in the last column.
 
 | # | Issue | PRD | Lane | Depends on | Status | Manual checks |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -13,7 +13,7 @@ Statuses: `todo`, `in progress`, `done`, `blocked`. An issue is `done` when its 
 | [005](005-whisper-engine.md) | Whisper engine wrapper | 02 | transcribe | 001 | done | — |
 | [006](006-silence-chunker.md) | Silence chunker | 02 | transcribe | 005 | done | — |
 | [007](007-model-catalog-downloads.md) | Model catalog and download manager | 02 | transcribe | 006 | done | — |
-| [008](008-benchmark-cli.md) | Benchmark CLI and speed table | 02 | transcribe | 007 | in progress | open |
+| [008](008-benchmark-cli.md) | Benchmark CLI and speed table | 02 | transcribe | 007 | paused | open |
 | [009](009-live-session.md) | Live session: capture to transcript | 03 | pipeline | 004, 006, 011 | in progress | open |
 | [010](010-meeting-folders.md) | Meeting folders, frontmatter, naming | 04 | store | 001 | done | — |
 | [011](011-transcript-file.md) | Transcript append, parse, sort | 04 | store | 010 | done | — |

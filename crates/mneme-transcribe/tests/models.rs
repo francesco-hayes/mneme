@@ -9,7 +9,7 @@ use std::path::Path;
 
 use mneme_transcribe::{
     DownloadState, MODEL_HOST, MODEL_REPOSITORY, MODEL_REVISION, ModelError, ModelSpec, ModelStore,
-    catalog, find_model,
+    catalog, find_model, installed_model_path,
 };
 use tempfile::TempDir;
 
@@ -288,6 +288,77 @@ fn a_catalog_that_could_not_be_stored_safely_is_rejected() {
 fn the_store_can_be_shared_between_threads() {
     fn assert_send_sync<T: Send + Sync + Clone + 'static>() {}
     assert_send_sync::<ModelStore>();
+}
+
+#[test]
+fn installed_model_path_finds_a_model_without_touching_the_folder() {
+    let dir = TempDir::new().unwrap();
+    let spec = find_model("tiny").unwrap();
+    // A sparse file of the catalog's size stands in for the model.
+    write_file(&dir.path().join(&spec.file_name), spec.size_bytes);
+    // An unfinished download and a stray file, which opening a store on the
+    // folder would delete or could trip over.
+    write_file(&dir.path().join("ggml-base.bin.part"), 5);
+    write_file(&dir.path().join("notes.txt"), 5);
+    let before = files_in(dir.path());
+
+    assert_eq!(
+        installed_model_path(dir.path(), "tiny"),
+        Ok(dir.path().join("ggml-tiny.bin"))
+    );
+    // The same answer a store gives, minus the store's clean-up.
+    assert_eq!(files_in(dir.path()), before);
+    assert!(dir.path().join("ggml-base.bin.part").exists());
+}
+
+#[test]
+fn installed_model_path_applies_the_installed_rule() {
+    let dir = TempDir::new().unwrap();
+    let not_installed = |id: &str, name: &str| {
+        Err(ModelError::NotInstalled {
+            id: id.to_owned(),
+            name: name.to_owned(),
+        })
+    };
+
+    // Nothing there.
+    assert_eq!(
+        installed_model_path(dir.path(), "base"),
+        not_installed("base", "Base")
+    );
+    // Only a download in progress.
+    write_file(&dir.path().join("ggml-base.bin.part"), 147_951_465);
+    assert_eq!(
+        installed_model_path(dir.path(), "base"),
+        not_installed("base", "Base")
+    );
+    // The right name with the wrong size.
+    write_file(&dir.path().join("ggml-base.bin"), 147_951_464);
+    assert_eq!(
+        installed_model_path(dir.path(), "base"),
+        not_installed("base", "Base")
+    );
+    // A folder with the model's name.
+    fs::create_dir(dir.path().join("ggml-tiny.en.bin")).unwrap();
+    assert_eq!(
+        installed_model_path(dir.path(), "tiny.en"),
+        not_installed("tiny.en", "Tiny (English)")
+    );
+    // An id the catalog does not have.
+    assert_eq!(
+        installed_model_path(dir.path(), "enormous"),
+        Err(ModelError::UnknownModel {
+            id: "enormous".to_owned()
+        })
+    );
+
+    // A folder that does not exist is not created.
+    let missing = dir.path().join("never-made");
+    assert_eq!(
+        installed_model_path(&missing, "base"),
+        not_installed("base", "Base")
+    );
+    assert!(!missing.exists());
 }
 
 /// Downloads the smallest real model from Hugging Face (about 78 MB) into a

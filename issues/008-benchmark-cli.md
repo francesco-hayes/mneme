@@ -1,6 +1,6 @@
 # 008: Benchmark CLI and speed table
 
-Status: todo · PRD: [02](../prds/02-transcription-and-models.md) · Lane: transcribe · Depends on: 007 · Owns: `crates/mneme-transcribe/`
+Status: paused · PRD: [02](../prds/02-transcription-and-models.md) · Lane: transcribe · Depends on: 007 · Owns: `crates/mneme-transcribe/`
 
 ## Goal
 
@@ -25,4 +25,18 @@ Finish build step 2: speed numbers for each model size on this Mac, from a repea
 
 ## Result
 
-_Filled in by the implementer._
+**Paused on 2026-11-12 at Francesco's request (low priority; run later). Written by the orchestrator, because the implementing agent was stopped before it reported.**
+
+What exists and was checked by the orchestrator after the stop:
+
+- `src/bin/` holds the `mneme-bench` binary, with `tests/bench_cli.rs` and helper scripts `scripts/make-bench-audio.sh`, `scripts/bench-models.sh` and `scripts/bench-rows.py`. Small changes were also made to `src/models.rs`, `src/models/store.rs`, `src/whisper.rs`, `src/lib.rs` and `tests/models.rs`.
+- `cargo test -p mneme-transcribe` passes (208 tests, 1 ignored) and `cargo clippy -p mneme-transcribe --all-targets -- -D warnings` is clean.
+
+What does not exist:
+
+- `docs/benchmarks.md`: no benchmark table, no measured numbers, no proposal for a target speed or a first-run recommendation.
+- No report from the agent, so nothing here says what the CLI's flags are, what was run, or what it found. None of the acceptance criteria are ticked for that reason; read the binary's `--help` and source before relying on it.
+
+Models on disk for when this resumes (gitignored, each SHA-256 checked against the catalog): `ggml-tiny.en.bin`, `ggml-base.bin`, `ggml-small.bin`, `ggml-large-v3-turbo.bin` in `crates/mneme-transcribe/models/`.
+
+To resume: review the binary, run it in release mode on each of the four models on a quiet machine, write `docs/benchmarks.md`, then tick the criteria.

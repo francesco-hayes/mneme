@@ -21,9 +21,15 @@ whisper-rs = { version = "=0.16.0", features = ["metal"] }
 ureq = { version = "3.5.2", default-features = false, features = ["rustls"] }
 # SHA-256 of downloaded model files.
 sha2 = "0.11.1"
+# The three below are used only by the `mneme-bench` binary (src/bin/), which
+# Cargo cannot give dependencies of its own. All three are already built for
+# the app through other crates (mneme-audio, mneme-core).
+# Reads the WAV file to benchmark. No dependencies of its own.
+hound = "3.5.1"
+# The benchmark's `--json` report.
+serde = { workspace = true }
+serde_json = { workspace = true }
 
 [dev-dependencies]
-# Reads the speech fixture in the integration test.
-hound = "3.5.1"
-# Temp folders for the model store tests.
+# Temp folders for the model store and benchmark tests.
 tempfile = "3.27.0"

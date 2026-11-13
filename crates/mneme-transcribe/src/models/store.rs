@@ -303,8 +303,33 @@ impl ModelStore {
     }
 
     fn spec_is_installed(&self, spec: &ModelSpec) -> bool {
-        fs::metadata(self.final_path(spec))
-            .is_ok_and(|metadata| metadata.is_file() && metadata.len() == spec.size_bytes)
+        file_is_installed(&self.final_path(spec), spec)
+    }
+}
+
+/// The installed rule: a regular file of exactly the catalog's size.
+fn file_is_installed(path: &Path, spec: &ModelSpec) -> bool {
+    fs::metadata(path).is_ok_and(|metadata| metadata.is_file() && metadata.len() == spec.size_bytes)
+}
+
+/// The file of a model of the built-in [`catalog`] installed in the models
+/// folder `dir`, found without opening a [`ModelStore`].
+///
+/// This only looks: it creates no folder and deletes nothing, so it is safe
+/// on a folder another process is downloading into, where
+/// [`ModelStore::open`] would remove that download's `.part` file. For
+/// command-line tools that take a model by id. The installed rule and the
+/// errors are those of [`ModelStore::installed_path`].
+pub fn installed_model_path(dir: impl AsRef<Path>, id: &str) -> Result<PathBuf, ModelError> {
+    let spec = catalog()
+        .iter()
+        .find(|spec| spec.id == id)
+        .ok_or_else(|| ModelError::UnknownModel { id: id.to_owned() })?;
+    let path = dir.as_ref().join(&spec.file_name);
+    if file_is_installed(&path, spec) {
+        Ok(path)
+    } else {
+        Err(not_installed(spec))
     }
 }
 

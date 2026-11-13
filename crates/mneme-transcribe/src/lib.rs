@@ -10,6 +10,10 @@
 //!   and verifies the ones the user picks, and deletes them. Its downloader
 //!   is the only code in the app that uses the network.
 //!
+//! Two development binaries come with the crate: `mneme-bench` times a
+//! model on a WAV file (results in `docs/benchmarks.md`), and `mneme-models`
+//! downloads a model of the catalog into the crate's `models/` folder.
+//!
 //! ```no_run
 //! use mneme_core::{AudioFrame, Speaker};
 //! use mneme_transcribe::{Chunk, Chunker, ChunkerConfig, Language, Transcriber, WhisperEngine};
@@ -57,7 +61,7 @@ pub use chunker::{Chunk, Chunker, ChunkerConfig, ChunkerStats};
 pub use fake::{FakeCall, FakeTranscriber};
 pub use models::{
     DownloadHandle, DownloadProgress, DownloadState, MODEL_HOST, MODEL_REPOSITORY, MODEL_REVISION,
-    ModelError, ModelInfo, ModelSpec, ModelStore, catalog, find_model,
+    ModelError, ModelInfo, ModelSpec, ModelStore, catalog, find_model, installed_model_path,
 };
 pub use transcriber::{
     Language, ParseLanguageError, TextSpan, TranscribeError, Transcriber, duration_ms,

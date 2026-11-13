@@ -119,6 +119,18 @@ impl WhisperEngine {
         whisper_rs::WHISPER_CPP_VERSION
     }
 
+    /// Stops whisper.cpp and its Metal backend from writing their log to
+    /// stderr, for the rest of the process. It cannot be switched back on.
+    ///
+    /// Without this, every model load prints some sixty lines (the model's
+    /// dimensions, the backend in use), and debug builds also print every
+    /// decoded token.
+    pub fn silence_log() {
+        // With neither of whisper-rs's logging features enabled, its hooks
+        // receive the log lines and drop them.
+        whisper_rs::install_logging_hooks();
+    }
+
     /// whisper.cpp's description of the backends and CPU features compiled
     /// in. It names Metal when the Metal backend is part of the build; it
     /// does not say which backend a loaded model runs on.

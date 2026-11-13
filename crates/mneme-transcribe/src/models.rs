@@ -44,4 +44,4 @@ mod tests;
 pub use catalog::{MODEL_HOST, MODEL_REPOSITORY, MODEL_REVISION, ModelSpec, catalog, find_model};
 pub use download::{DownloadProgress, DownloadState};
 pub use error::ModelError;
-pub use store::{DownloadHandle, ModelInfo, ModelStore};
+pub use store::{DownloadHandle, ModelInfo, ModelStore, installed_model_path};
