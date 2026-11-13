@@ -14,6 +14,11 @@ pub enum AudioError {
     #[error("no default input device")]
     NoInputDevice,
 
+    /// The system has no default output device right now, so there is no
+    /// system audio to capture.
+    #[error("no default output device")]
+    NoOutputDevice,
+
     /// The OS refused access to the device (microphone or audio capture
     /// permission).
     #[error("audio permission denied: {0}")]

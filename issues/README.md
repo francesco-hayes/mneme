@@ -8,8 +8,8 @@ Statuses: `todo`, `in progress`, `done`, `blocked`. An issue is `done` when its 
 | --- | --- | --- | --- | --- | --- | --- |
 | [001](001-scaffold-workspace.md) | Scaffold workspace and app shell | 00 | base | — | done | — |
 | [002](002-mic-capture.md) | Mic capture to 16 kHz mono, WAV writer | 01 | audio | 001 | done | open |
-| [003](003-system-audio-taps.md) | System audio capture with Core Audio taps | 01 | audio | 002 | in progress | open |
-| [004](004-two-channel-recorder.md) | Two-channel recorder and `mneme-record` CLI | 01 | audio | 003 | todo | open |
+| [003](003-system-audio-taps.md) | System audio capture with Core Audio taps | 01 | audio | 002 | done | open |
+| [004](004-two-channel-recorder.md) | Two-channel recorder and `mneme-record` CLI | 01 | audio | 003 | in progress | open |
 | [005](005-whisper-engine.md) | Whisper engine wrapper | 02 | transcribe | 001 | done | — |
 | [006](006-silence-chunker.md) | Silence chunker | 02 | transcribe | 005 | done | — |
 | [007](007-model-catalog-downloads.md) | Model catalog and download manager | 02 | transcribe | 006 | in progress | — |

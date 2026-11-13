@@ -12,7 +12,21 @@ rubato = "5.1.0"
 hound = "3.5.1"
 thiserror = "2.0.21"
 
+[features]
+# Opt-in use of two private functions of Apple's TCC framework
+# (`TCCAccessPreflight`, `TCCAccessRequest`) to read and request the System
+# Audio Recording permission. macOS has no public API for either; see
+# `system_audio_permission_status`. Off by default: without it nothing private
+# is called and the status reads as unknown.
+tcc-spi = []
+
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6.5"
 objc2-av-foundation = { version = "0.3.2", default-features = false, features = ["std", "AVCaptureDevice", "AVMediaFormat", "block2"] }
 block2 = "0.6.2"
+# Core Audio process taps (issue 003). cpal already depends on these three
+# crates at these versions; here they are used directly.
+objc2-core-audio = { version = "0.3.2", default-features = false, features = ["std", "AudioHardware", "HostTime", "objc2", "objc2-core-audio-types", "objc2-foundation"] }
+objc2-core-audio-types = { version = "0.3.2", default-features = false, features = ["std", "CoreAudioBaseTypes", "objc2"] }
+objc2-core-foundation = { version = "0.3.2", default-features = false, features = ["std", "CFArray", "CFBase", "CFDictionary", "CFNumber", "CFString"] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSArray", "NSString", "NSUUID", "NSValue"] }

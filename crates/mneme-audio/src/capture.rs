@@ -22,7 +22,7 @@ use std::time::{Duration, Instant};
 
 use mneme_core::Speaker;
 
-use crate::convert::{ToF32, downmix_interleaved};
+use crate::convert::{ToF32, downmix_interleaved, downmix_planar};
 use crate::source::SourceState;
 use crate::{AudioError, FrameSender, Framer};
 
@@ -91,6 +91,27 @@ impl StreamEvents {
             mono,
             first_sample_at,
         });
+    }
+
+    /// Hands over one buffer delivered as one slice per channel (how Core
+    /// Audio delivers non-interleaved formats). Otherwise as
+    /// [`data`](Self::data).
+    pub(crate) fn data_planar<T: ToF32>(&self, channels: &[&[T]], first_sample_at: Instant) {
+        let mut mono = Vec::new();
+        downmix_planar(channels, &mut mono);
+        let _ = self.tx.send(Event::Data {
+            generation: self.generation,
+            mono,
+            first_sample_at,
+        });
+    }
+
+    /// A handle connected to nothing: whatever is reported through it is
+    /// dropped. For opening a stream outside a capture thread, to find out
+    /// whether it can be opened at all.
+    pub(crate) fn detached() -> Self {
+        let (tx, _rx) = mpsc::channel();
+        Self { tx, generation: 0 }
     }
 
     /// Reports that the stream broke. The capture thread queues the error for
@@ -395,7 +416,7 @@ impl<B: Backend> Worker<B> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::sync::Mutex;
 
     use mneme_core::AudioFrame;
@@ -403,6 +424,96 @@ mod tests {
     use super::*;
     use crate::frame_channel;
     use crate::testutil::sine;
+
+    /// What was reported through a [`StreamEvents`] that no capture thread
+    /// listens to. For testing a stream's callbacks on their own.
+    pub(crate) struct EventLog {
+        rx: mpsc::Receiver<Event>,
+        seen: Mutex<Seen>,
+    }
+
+    #[derive(Default)]
+    struct Seen {
+        /// Mono samples and the capture time of the first, per buffer.
+        data: Vec<(Vec<f32>, Instant)>,
+        errors: Vec<AudioError>,
+    }
+
+    /// A [`StreamEvents`] and the log of everything sent through it and its
+    /// clones.
+    pub(crate) fn logging_events() -> (StreamEvents, EventLog) {
+        let (tx, rx) = mpsc::channel();
+        let log = EventLog {
+            rx,
+            seen: Mutex::default(),
+        };
+        (StreamEvents { tx, generation: 1 }, log)
+    }
+
+    impl EventLog {
+        /// Moves what has arrived into `seen`; `true` if every sender is
+        /// gone.
+        fn collect(&self) -> bool {
+            let mut seen = self.seen.lock().unwrap();
+            loop {
+                match self.rx.try_recv() {
+                    Ok(Event::Data {
+                        mono,
+                        first_sample_at,
+                        ..
+                    }) => seen.data.push((mono, first_sample_at)),
+                    Ok(Event::StreamError { error, .. }) => seen.errors.push(error),
+                    Ok(Event::Stop) => {}
+                    Err(mpsc::TryRecvError::Empty) => return false,
+                    Err(mpsc::TryRecvError::Disconnected) => return true,
+                }
+            }
+        }
+
+        /// Every buffer handed over so far: the mono samples and the capture
+        /// time of the first.
+        pub(crate) fn data(&self) -> Vec<(Vec<f32>, Instant)> {
+            self.collect();
+            self.seen.lock().unwrap().data.clone()
+        }
+
+        /// Every error reported so far.
+        pub(crate) fn errors(&self) -> Vec<AudioError> {
+            self.collect();
+            self.seen.lock().unwrap().errors.clone()
+        }
+
+        /// `true` once the [`StreamEvents`] and all its clones are dropped.
+        pub(crate) fn senders_gone(&self) -> bool {
+            self.collect()
+        }
+    }
+
+    #[test]
+    fn planar_buffers_are_downmixed_like_interleaved_ones() {
+        let (events, log) = logging_events();
+        let at = Instant::now();
+        let (left, right) = ([0.5f32, -0.5, 1.0], [0.5f32, 0.5, 0.0]);
+        events.data_planar(&[&left[..], &right[..]], at);
+        events.data(&[0.5f32, 0.5, -0.5, 0.5, 1.0, 0.0], 2, at);
+        // Integer channels convert on the way, as in `data`.
+        events.data_planar(&[&[i16::MIN, 0][..], &[0, 16_384][..]], at);
+        let data = log.data();
+        assert_eq!(data[0], (vec![0.5, 0.0, 0.5], at));
+        assert_eq!(data[0], data[1]);
+        assert_eq!(data[2].0, [-0.5, 0.25]);
+        assert!(!log.senders_gone());
+        drop(events);
+        assert!(log.senders_gone());
+    }
+
+    #[test]
+    fn a_detached_handle_swallows_everything() {
+        let events = StreamEvents::detached();
+        events.data(&[0.0f32; 4], 2, Instant::now());
+        events.data_planar(&[&[0.0f32; 4][..]], Instant::now());
+        events.error(AudioError::NoOutputDevice);
+    }
 
     /// What the test and the scripted backend share.
     #[derive(Default)]

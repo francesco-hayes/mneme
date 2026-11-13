@@ -60,6 +60,9 @@ pub struct FakeSource {
 
 struct Worker {
     stop: Arc<AtomicBool>,
+    /// Set by the thread when it has delivered its last frame, just before
+    /// it drops the frame sender.
+    done: Arc<AtomicBool>,
     thread: JoinHandle<()>,
 }
 
@@ -143,7 +146,14 @@ impl AudioSource for FakeSource {
     }
 
     fn start(&mut self, start: Instant, sink: FrameSender) -> Result<(), AudioError> {
-        if self.is_running() {
+        // The worker drops its frame sender a moment before it reports
+        // stopped. A consumer that saw the channel end may call `start` in
+        // between; that is a finished source, not a running one.
+        let finishing = self
+            .worker
+            .as_ref()
+            .is_some_and(|worker| worker.done.load(Ordering::SeqCst));
+        if self.is_running() && !finishing {
             return Err(AudioError::AlreadyRunning);
         }
         self.wait_until_finished();
@@ -161,8 +171,10 @@ impl AudioSource for FakeSource {
             fail_at: self.fail_at.clone(),
             state: Arc::clone(&self.state),
             stop: Arc::new(AtomicBool::new(false)),
+            done: Arc::new(AtomicBool::new(false)),
         };
         let stop = Arc::clone(&playback.stop);
+        let done = Arc::clone(&playback.done);
         self.state.set_running(true);
         let thread = thread::Builder::new()
             .name(format!("mneme-fake-{}", self.speaker))
@@ -171,7 +183,7 @@ impl AudioSource for FakeSource {
                 self.state.set_running(false);
                 AudioError::Other(format!("could not spawn fake source thread: {e}"))
             })?;
-        self.worker = Some(Worker { stop, thread });
+        self.worker = Some(Worker { stop, done, thread });
         Ok(())
     }
 
@@ -206,6 +218,7 @@ struct Playback {
     fail_at: Option<(usize, AudioError)>,
     state: Arc<SourceState>,
     stop: Arc<AtomicBool>,
+    done: Arc<AtomicBool>,
 }
 
 impl Playback {
@@ -244,7 +257,9 @@ impl Playback {
             self.state.report(error);
         }
         // Drop the frame sender before reporting stopped, so a consumer that
-        // sees `is_running() == false` also sees the channel end.
+        // sees `is_running() == false` also sees the channel end. `done`
+        // covers the moment in between (see `start`).
+        self.done.store(true, Ordering::SeqCst);
         drop(self.framer);
         self.state.set_running(false);
     }

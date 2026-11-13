@@ -7,13 +7,15 @@
 //!
 //! | Piece | What it is |
 //! | --- | --- |
-//! | [`AudioSource`] | The trait. Implemented by [`MicSource`], [`FakeSource`], and the system audio source. |
+//! | [`AudioSource`] | The trait. Implemented by [`MicSource`], [`SystemAudioSource`] and [`FakeSource`]. |
 //! | [`MicSource`] | The default microphone via `cpal`, as `Speaker::Me`. Follows device changes. |
+//! | [`SystemAudioSource`] | What the Mac is playing, via a Core Audio process tap, as `Speaker::Them`. Follows output device changes. |
 //! | [`FakeSource`] | Plays a `Vec<f32>` or a WAV file, in real time or at full speed. For tests. |
 //! | [`Framer`] | The meeting clock: device buffers in, stamped fixed-size frames out. Every source uses it. |
 //! | [`convert`] | Sample formats to `f32`, downmix to mono, resampling to 16 kHz. Pure functions. |
 //! | [`WavWriter`] | Streaming 16 kHz mono 16-bit WAV writer; [`read_wav_16k_mono`] reads any WAV. |
 //! | [`microphone_permission_status`], [`request_microphone_permission`] | Microphone permission. |
+//! | [`system_audio_permission_status`], [`request_system_audio_permission`] | System Audio Recording permission, as far as macOS lets it be known. |
 //!
 //! ```
 //! use std::time::Instant;
@@ -40,6 +42,7 @@ mod framer;
 mod mic;
 mod permission;
 mod source;
+mod system;
 #[cfg(test)]
 mod testutil;
 pub mod wav;
@@ -51,6 +54,8 @@ pub use framer::{FRAME_MS, FRAME_SAMPLES, Framer};
 pub use mic::MicSource;
 pub use permission::{
     PermissionStatus, microphone_permission_status, request_microphone_permission,
+    request_system_audio_permission, system_audio_permission_status,
 };
 pub use source::{AudioSource, FrameReceiver, FrameSender, frame_channel};
+pub use system::SystemAudioSource;
 pub use wav::{WavWriter, read_wav_16k_mono};
