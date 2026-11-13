@@ -1,0 +1,114 @@
+/*
+ * Design tokens. Every color, size and spacing value used by a component or
+ * screen comes from here, so light and dark stay in step and the app keeps one
+ * look. Colors follow the system appearance through `prefers-color-scheme`.
+ *
+ * `light-dark()` is not used: the app's oldest WebKit (macOS 14.4, Safari 17.4)
+ * does not have it.
+ */
+
+:root {
+  color-scheme: light dark;
+
+  /* Type. 13px is the macOS body size. */
+  --font-ui:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue",
+    sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --text-caption: 11px;
+  --text-small: 12px;
+  --text-body: 13px;
+  --text-headline: 15px;
+  --text-title: 20px;
+  --line-tight: 1.25;
+  --line-body: 1.45;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+
+  /* Space, on a 4px grid. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+
+  /* Corner radius. */
+  --radius-small: 4px;
+  --radius-control: 6px;
+  --radius-panel: 10px;
+
+  /* Control and layout sizes. */
+  --control-height: 28px;
+  --control-height-small: 22px;
+  --icon-size: 16px;
+  --topbar-height: 44px;
+  --recording-bar-height: 40px;
+  /* The widest a column of text or a list gets. */
+  --content-width: 680px;
+  --hairline: 1px;
+
+  --duration-fast: 120ms;
+
+  /* Colors: light. */
+  --color-bg: #ffffff;
+  /* The top bar and the recording bar, next to the native title bar. */
+  --color-chrome: #f5f5f5;
+  --color-text: rgb(0 0 0 / 0.85);
+  --color-text-secondary: rgb(0 0 0 / 0.56);
+  --color-text-tertiary: rgb(0 0 0 / 0.3);
+  --color-separator: rgb(0 0 0 / 0.1);
+  --color-hover: rgb(0 0 0 / 0.05);
+  --color-pressed: rgb(0 0 0 / 0.1);
+  --color-control: #ffffff;
+  --color-control-border: rgb(0 0 0 / 0.16);
+  --color-control-pressed: #f0f0f0;
+  --shadow-control: 0 0.5px 1px rgb(0 0 0 / 0.12);
+  /* Accent: macOS blue unless the browser exposes the system accent (below). */
+  --color-accent: #007aff;
+  --color-on-accent: #ffffff;
+  /* Red for the recording indicator; a darker red where it is used as text. */
+  --color-recording: #ff3b30;
+  --color-danger: #c4001a;
+  --color-warning: #a05a00;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: #1e1e1e;
+    --color-chrome: #2a2a2a;
+    --color-text: rgb(255 255 255 / 0.87);
+    --color-text-secondary: rgb(255 255 255 / 0.58);
+    --color-text-tertiary: rgb(255 255 255 / 0.3);
+    --color-separator: rgb(255 255 255 / 0.12);
+    --color-hover: rgb(255 255 255 / 0.07);
+    --color-pressed: rgb(255 255 255 / 0.13);
+    --color-control: rgb(255 255 255 / 0.12);
+    --color-control-border: rgb(255 255 255 / 0.08);
+    --color-control-pressed: rgb(255 255 255 / 0.2);
+    --shadow-control: 0 0.5px 1px rgb(0 0 0 / 0.3);
+    --color-accent: #0a84ff;
+    --color-on-accent: #ffffff;
+    --color-recording: #ff453a;
+    --color-danger: #ff6961;
+    --color-warning: #ffb340;
+  }
+}
+
+/* The system accent color, where the browser has the keyword. */
+@supports (color: AccentColor) {
+  :root {
+    --color-accent: AccentColor;
+    --color-on-accent: AccentColorText;
+  }
+}
+
+:root {
+  /* Derived from the accent, so they follow it in both appearances. */
+  --color-accent-soft: color-mix(in srgb, var(--color-accent) 16%, transparent);
+  --color-focus-ring: color-mix(in srgb, var(--color-accent) 55%, transparent);
+  --color-danger-soft: color-mix(in srgb, var(--color-danger) 12%, transparent);
+}

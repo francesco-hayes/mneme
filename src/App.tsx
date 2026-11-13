@@ -1,70 +1,42 @@
-import { useEffect, useState } from "react";
-import "./App.css";
-import { api, type MeetingSummary } from "./lib/api";
+import { InlineError } from "./components";
+import { api } from "./lib/api";
+import { useLoad } from "./lib/useLoad";
+import { AppShell } from "./shell/AppShell";
+import styles from "./shell/AppShell.module.css";
+import { startupRoute } from "./shell/startup";
+import { NavigationProvider } from "./state/NavigationProvider";
+import { RecordingProvider } from "./state/RecordingProvider";
 
-type Load =
-  | { state: "loading" }
-  | { state: "ready"; meetings: MeetingSummary[] }
-  | { state: "error"; message: string };
+const loadModels = () => api.listModels();
 
-function describeDuration(durationSecs: number | null): string {
-  if (durationSecs === null) return "";
-  return `${Math.max(1, Math.round(durationSecs / 60))} min`;
+/** Finds out which screen to open on (the first-run gate), then shows the shell. */
+function Startup() {
+  const models = useLoad(loadModels);
+
+  if (models.status === "loading") {
+    return <div className={styles.startup} aria-busy="true" />;
+  }
+  if (models.status === "error") {
+    return (
+      <div className={styles.startup}>
+        <InlineError
+          message={`Mneme could not start: ${models.message}`}
+          onRetry={models.reload}
+        />
+      </div>
+    );
+  }
+  return (
+    <NavigationProvider initialRoute={startupRoute(models.data)}>
+      <AppShell />
+    </NavigationProvider>
+  );
 }
 
-/** Placeholder screen that proves the API wiring. Issue 015 replaces it with the real shell. */
 export default function App() {
-  const [load, setLoad] = useState<Load>({ state: "loading" });
-
-  useEffect(() => {
-    let cancelled = false;
-    api.listMeetings().then(
-      (meetings) => {
-        if (!cancelled) setLoad({ state: "ready", meetings });
-      },
-      (error: unknown) => {
-        const message = error instanceof Error ? error.message : String(error);
-        if (!cancelled) setLoad({ state: "error", message });
-      },
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
   return (
-    <main className="placeholder">
-      <h1>Mneme</h1>
-      <p className="hint">Placeholder screen: meetings from the API module.</p>
-
-      {load.state === "loading" && <p>Loading meetings…</p>}
-      {load.state === "error" && (
-        <p role="alert">Could not load meetings: {load.message}</p>
-      )}
-      {load.state === "ready" && load.meetings.length === 0 && (
-        <p>No meetings yet.</p>
-      )}
-      {load.state === "ready" && load.meetings.length > 0 && (
-        <ul className="meetings">
-          {load.meetings.map((meeting) => (
-            <li key={meeting.id}>
-              <span className="title">{meeting.title}</span>
-              {meeting.status !== "complete" && (
-                <span className="status">{meeting.status}</span>
-              )}
-              <span className="meta">
-                {new Date(meeting.startedAt).toLocaleDateString(undefined, {
-                  month: "short",
-                  day: "numeric",
-                })}
-              </span>
-              <span className="meta">
-                {describeDuration(meeting.durationSecs)}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </main>
+    <RecordingProvider>
+      <Startup />
+    </RecordingProvider>
   );
 }

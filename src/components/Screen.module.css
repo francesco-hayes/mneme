@@ -1,0 +1,63 @@
+.screen {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  height: 100%;
+}
+
+.topBar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--topbar-height);
+  padding: 0 var(--space-3);
+  border-bottom: var(--hairline) solid var(--color-separator);
+  background: var(--color-chrome);
+}
+
+.titleArea {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  min-width: 0;
+  /* Lines the title up with the content column when there is no Back button. */
+  padding-inline-start: var(--space-2);
+}
+
+.title {
+  overflow: hidden;
+  font-size: var(--text-headline);
+  font-weight: var(--weight-semibold);
+  line-height: var(--line-tight);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.content {
+  flex: 1;
+  min-height: 0;
+}
+
+.column {
+  overflow-y: auto;
+}
+
+.columnInner {
+  max-width: var(--content-width);
+  margin: 0 auto;
+  padding: var(--space-5);
+}
+
+.fill {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}

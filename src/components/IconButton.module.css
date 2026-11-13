@@ -1,0 +1,27 @@
+.iconButton {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-height);
+  height: var(--control-height);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: default;
+}
+
+.iconButton:hover:not(:disabled) {
+  background: var(--color-hover);
+  color: var(--color-text);
+}
+
+.iconButton:active:not(:disabled) {
+  background: var(--color-pressed);
+}
+
+.iconButton:disabled {
+  opacity: 0.45;
+}

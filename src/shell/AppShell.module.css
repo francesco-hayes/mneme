@@ -1,0 +1,19 @@
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.screenArea {
+  flex: 1;
+  min-height: 0;
+}
+
+/* Before the first screen is known, and when startup fails. */
+.startup {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: var(--space-6);
+}

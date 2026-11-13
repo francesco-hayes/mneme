@@ -7,21 +7,21 @@ Statuses: `todo`, `in progress`, `done`, `blocked`. An issue is `done` when its 
 | # | Issue | PRD | Lane | Depends on | Status | Manual checks |
 | --- | --- | --- | --- | --- | --- | --- |
 | [001](001-scaffold-workspace.md) | Scaffold workspace and app shell | 00 | base | — | done | — |
-| [002](002-mic-capture.md) | Mic capture to 16 kHz mono, WAV writer | 01 | audio | 001 | todo | open |
+| [002](002-mic-capture.md) | Mic capture to 16 kHz mono, WAV writer | 01 | audio | 001 | in progress | open |
 | [003](003-system-audio-taps.md) | System audio capture with Core Audio taps | 01 | audio | 002 | todo | open |
 | [004](004-two-channel-recorder.md) | Two-channel recorder and `mneme-record` CLI | 01 | audio | 003 | todo | open |
-| [005](005-whisper-engine.md) | Whisper engine wrapper | 02 | transcribe | 001 | todo | — |
+| [005](005-whisper-engine.md) | Whisper engine wrapper | 02 | transcribe | 001 | in progress | — |
 | [006](006-silence-chunker.md) | Silence chunker | 02 | transcribe | 005 | todo | — |
 | [007](007-model-catalog-downloads.md) | Model catalog and download manager | 02 | transcribe | 006 | todo | — |
 | [008](008-benchmark-cli.md) | Benchmark CLI and speed table | 02 | transcribe | 007 | todo | open |
 | [009](009-live-session.md) | Live session: capture to transcript | 03 | pipeline | 004, 006, 011 | todo | open |
-| [010](010-meeting-folders.md) | Meeting folders, frontmatter, naming | 04 | store | 001 | todo | — |
+| [010](010-meeting-folders.md) | Meeting folders, frontmatter, naming | 04 | store | 001 | in progress | — |
 | [011](011-transcript-file.md) | Transcript append, parse, sort | 04 | store | 010 | todo | — |
 | [012](012-notes-and-timeline.md) | Notes safe writes and note timeline | 04 | store | 011 | todo | — |
 | [013](013-listing-and-recovery.md) | Meeting list and crash recovery | 04 | store | 012 | todo | — |
 | [014](014-settings-file.md) | Settings file | 04 | store | 013 | todo | — |
-| [015](015-ui-shell.md) | UI shell: routing, theme, recording bar | 05 | ui | 001 | todo | — |
-| [016](016-home-screen.md) | Home screen | 05 | ui | 015 | todo | — |
+| [015](015-ui-shell.md) | UI shell: routing, theme, recording bar | 05 | ui | 001 | done | — |
+| [016](016-home-screen.md) | Home screen | 05 | ui | 015 | in progress | — |
 | [017](017-meeting-live-view.md) | Meeting live view and editor | 05 | ui | 016 | todo | — |
 | [018](018-meeting-after-view.md) | Meeting after view and transcript pane | 05 | ui | 017 | todo | — |
 | [019](019-settings-screen.md) | Settings screen | 05 | ui | 018 | todo | — |
