@@ -30,7 +30,7 @@ Statuses: `todo`, `in progress`, `done`, `blocked`, `paused` (stopped part-way o
 | [021](021-tauri-commands.md) | Tauri commands and events | 06 | app | 009, 007, 014 | done | open |
 | [022](022-menu-bar-icon.md) | Menu bar icon | 06 | app | 021 | done | open |
 | [023](023-global-shortcut.md) | Global shortcut | 06 | app | 022 | done | open |
-| [024](024-permissions-flow.md) | Permissions flow | 06 | app | 023 | in progress | open |
+| [024](024-permissions-flow.md) | Permissions flow | 06 | app | 023 | done | open |
 | [025](025-signing-and-release.md) | Signing, notarization, local-only audit | 06 | release | 021 | done | open |
 
 ## Lanes

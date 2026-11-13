@@ -103,11 +103,6 @@ impl Host for TauriHost {
     }
 
     fn open_privacy_settings(&self, kind: PermissionKind) -> Result<()> {
-        let pane = match kind {
-            PermissionKind::Microphone => "Privacy_Microphone",
-            PermissionKind::SystemAudio => "Privacy_AudioCapture",
-        };
-        let url = format!("x-apple.systempreferences:com.apple.preference.security?{pane}");
-        open(&[url.as_ref()])
+        open(&[kind.settings_url().as_ref()])
     }
 }

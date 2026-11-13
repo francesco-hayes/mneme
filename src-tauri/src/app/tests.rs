@@ -5,7 +5,7 @@ use std::fs;
 use std::sync::Weak;
 use std::sync::mpsc::{Receiver, Sender, channel};
 
-use mneme_audio::{FakeSource, Pacing};
+use mneme_audio::{FakeSource, FrameSender, Pacing};
 use mneme_core::SAMPLE_RATE;
 use mneme_store::{MeetingStatus, NOTES_FILE, TIMELINE_FILE};
 use mneme_transcribe::{FakeTranscriber, ModelSpec, TextSpan, TranscribeError};
@@ -54,6 +54,9 @@ struct TestHost {
     microphone_requests: Mutex<u32>,
     system_audio: Option<PermissionStatus>,
     system_audio_answer: Option<PermissionStatus>,
+    /// The system source's access check is refused, as it is without the
+    /// System Audio Recording permission.
+    system_audio_refused: AtomicBool,
     revealed: Mutex<Vec<PathBuf>>,
     settings_opened: Mutex<Vec<PermissionKind>>,
 }
@@ -76,6 +79,7 @@ impl TestHost {
             microphone_requests: Mutex::new(0),
             system_audio: None,
             system_audio_answer: None,
+            system_audio_refused: AtomicBool::new(false),
             revealed: Mutex::default(),
             settings_opened: Mutex::default(),
         }
@@ -117,6 +121,32 @@ fn tape(burst_at_ms: u64, total_ms: u64) -> Vec<f32> {
         .collect()
 }
 
+/// A system source that fails the way `SystemAudioSource` does when macOS
+/// refuses its access check.
+struct RefusedSystemAudio;
+
+impl AudioSource for RefusedSystemAudio {
+    fn speaker(&self) -> Speaker {
+        Speaker::Them
+    }
+
+    fn start(&mut self, _: Instant, _: FrameSender) -> std::result::Result<(), AudioError> {
+        Err(AudioError::PermissionDenied(
+            "system audio recording is not allowed".to_owned(),
+        ))
+    }
+
+    fn stop(&mut self) {}
+
+    fn is_running(&self) -> bool {
+        false
+    }
+
+    fn take_errors(&mut self) -> Vec<AudioError> {
+        Vec::new()
+    }
+}
+
 impl Host for TestHost {
     fn recording_state(&self, state: &dto::RecordingState) {
         if state.status == "idle" {
@@ -153,6 +183,9 @@ impl Host for TestHost {
             Box::new(FakeSource::from_samples(speaker, samples).with_pacing(self.pacing))
                 as Box<dyn AudioSource>
         };
+        if self.system_audio_refused.load(Ordering::SeqCst) {
+            return vec![source(Speaker::Me, 300), Box::new(RefusedSystemAudio)];
+        }
         vec![source(Speaker::Me, 300), source(Speaker::Them, 500)]
     }
 
@@ -705,9 +738,66 @@ fn permissions_report_what_is_known_and_a_request_agrees_with_the_next_read() {
     );
     assert_eq!(f.core.permissions().system_audio, "granted");
 
+    // A microphone grant made in System Settings shows at the next read.
+    let f = Fixture::new(&[], NEVER, |host| {
+        host.microphone = Mutex::new(PermissionStatus::Denied);
+    });
+    assert_eq!(f.core.permissions().microphone, "denied");
+    *f.host.microphone.lock().unwrap() = PermissionStatus::Granted;
+    assert_eq!(f.core.permissions().microphone, "granted");
+}
+
+#[test]
+fn a_refused_system_source_records_the_microphone_only_and_reads_denied_from_then_on() {
+    let f = Fixture::new(&["small"], NEVER, |host| {
+        host.system_audio_refused = AtomicBool::new(true);
+    });
+    assert_eq!(f.core.permissions().system_audio, "undetermined");
+
+    // The meeting starts all the same, with the microphone alone.
+    let id = f.core.start_meeting().unwrap().summary.id;
+    f.wait_for_lines(&id, 1);
+    let stopped = f.core.stop_meeting().unwrap();
+    assert_eq!(stopped.summary.status, "complete");
+    let transcript = f.core.get_transcript(&id).unwrap();
+    assert!(transcript.iter().all(|line| line.speaker == "Me"));
+    assert_eq!(f.core.permissions().system_audio, "denied");
+
+    // "Open System Settings" is a request on a denied permission: the pane
+    // opens and the answer is `denied`, the same as the next read.
     assert_eq!(
-        PermissionKind::parse("systemAudio"),
-        Ok(PermissionKind::SystemAudio)
+        f.core.request_permission(PermissionKind::SystemAudio),
+        "denied"
     );
-    assert!(PermissionKind::parse("camera").is_err());
+    assert_eq!(
+        *f.host.settings_opened.lock().unwrap(),
+        [PermissionKind::SystemAudio]
+    );
+    assert_eq!(f.core.permissions().system_audio, "denied");
+
+    // Known to be denied: the next meeting is not refused, and the system
+    // source is tried again, so access given meanwhile is noticed.
+    f.host.system_audio_refused.store(false, Ordering::SeqCst);
+    let id = f.core.start_meeting().unwrap().summary.id;
+    f.wait_for_lines(&id, 2);
+    f.core.stop_meeting().unwrap();
+    assert_eq!(f.core.permissions().system_audio, "granted");
+}
+
+#[test]
+fn a_meeting_that_loses_every_source_does_not_stay_recording() {
+    // Short tapes: both sources end by themselves, with a tick to see it.
+    let f = Fixture::new(&["small"], Duration::from_millis(50), |host| {
+        host.system_audio_refused = AtomicBool::new(true);
+        host.tape_ms = 400;
+    });
+    let id = f.core.start_meeting().unwrap().summary.id;
+    f.wait_for("the recording to end by itself", || {
+        f.core.recording_state().status == "idle"
+    });
+    // The window was told: the last states are stopping, then idle.
+    let statuses = f.host.statuses();
+    assert_eq!(statuses[statuses.len() - 2..], ["stopping", "idle"]);
+    assert_eq!(f.core.get_meeting(&id).unwrap().summary.status, "complete");
+    assert_eq!(f.core.permissions().system_audio, "denied");
 }

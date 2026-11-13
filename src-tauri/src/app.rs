@@ -12,11 +12,11 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use mneme_audio::PermissionStatus;
+use mneme_audio::{PermissionStatus, SourceStatus};
 use mneme_core::Speaker;
 use mneme_pipeline::{
-    AudioError, AudioSource, Language, RecorderOptions, Session, SessionConfig, SessionSummary,
-    SourcePhase, Transcriber,
+    AudioError, AudioSource, EndReason, Language, RecorderOptions, Session, SessionConfig,
+    SessionSummary, Transcriber,
 };
 use mneme_store::{
     MeetingId, NewMeeting, Patch, SETTINGS_FILE, Settings, SettingsPatch, SettingsStore, StartTime,
@@ -25,6 +25,8 @@ use mneme_store::{
 use mneme_transcribe::ModelStore;
 
 use crate::dto;
+pub use crate::permissions::PermissionKind;
+use crate::permissions::{self, RequestAction, StartDecision, SystemAudioSeen};
 
 /// Errors cross to the UI as one readable sentence.
 pub type Result<T> = std::result::Result<T, String>;
@@ -45,7 +47,6 @@ const QUIT_GRACE: Duration = Duration::from_secs(10);
 const NOT_RECORDING: &str = "No meeting is being recorded.";
 const ALREADY_RECORDING: &str = "A meeting is already being recorded.";
 const NO_MODEL: &str = "No transcription model is installed. Download one in Settings.";
-const MIC_DENIED: &str = "Microphone access is denied. Allow Mneme in System Settings > Privacy & Security > Microphone.";
 
 fn msg(error: impl Display) -> String {
     error.to_string()
@@ -53,23 +54,6 @@ fn msg(error: impl Display) -> String {
 
 fn log(message: impl Display) {
     eprintln!("mneme: {message}");
-}
-
-/// The two capture permissions, as `requestPermission` names them.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PermissionKind {
-    Microphone,
-    SystemAudio,
-}
-
-impl PermissionKind {
-    pub fn parse(kind: &str) -> Result<Self> {
-        match kind {
-            "microphone" => Ok(Self::Microphone),
-            "systemAudio" => Ok(Self::SystemAudio),
-            other => Err(format!("Unknown permission: {other}")),
-        }
-    }
 }
 
 /// Everything the core needs from outside: the real app implements it with
@@ -107,6 +91,9 @@ struct Live {
     session: Arc<Session>,
     /// The store the meeting was created in.
     store: Arc<Store>,
+    /// System audio was already known to be refused when the meeting
+    /// started, and the log has said so.
+    mic_only: bool,
 }
 
 /// One recording at a time: the whole state of it.
@@ -169,9 +156,9 @@ pub struct AppCore {
     /// Signalled whenever `recording` changes.
     changed: Condvar,
     quitting: AtomicBool,
-    /// Set once this run has seen system audio capture work, the only way
-    /// to know the permission without private API.
-    system_audio_seen: AtomicBool,
+    /// What this run's recordings learned about the system audio
+    /// permission, the only way to know it without private API.
+    system_audio_seen: Mutex<SystemAudioSeen>,
     tick: Duration,
 }
 
@@ -216,7 +203,7 @@ impl AppCore {
             recording: Mutex::new(Recording::Idle),
             changed: Condvar::new(),
             quitting: AtomicBool::new(false),
-            system_audio_seen: AtomicBool::new(false),
+            system_audio_seen: Mutex::default(),
             tick,
         }))
     }
@@ -393,9 +380,16 @@ impl AppCore {
             PermissionStatus::NotDetermined => self.host.request_microphone_permission(),
             status => status,
         };
-        if !microphone.is_granted() {
-            return Err(MIC_DENIED.to_owned());
-        }
+        let mic_only = match permissions::start_decision(microphone, self.system_audio_permission())
+        {
+            StartDecision::Record => false,
+            // The contract has no field for this, so it goes to the log.
+            StartDecision::MicOnly(why) => {
+                log(why);
+                true
+            }
+            StartDecision::Refuse(why) => return Err(why),
+        };
 
         // The model first: if it cannot be loaded, no meeting folder is left
         // behind.
@@ -428,6 +422,7 @@ impl AppCore {
                     model_id: model_id.to_owned(),
                     session: Arc::new(session),
                     store,
+                    mic_only,
                 },
                 engine,
             )),
@@ -448,7 +443,8 @@ impl AppCore {
     /// and finishes the meeting if the session ends by itself (every source
     /// ended, or the session failed).
     fn watch(&self, meeting_id: &MeetingId) {
-        let mut reported_failures = false;
+        // The channels already reported as lost: each is said once.
+        let mut lost: Vec<Speaker> = Vec::new();
         let mut next_tick = Instant::now() + self.tick;
         loop {
             let session = {
@@ -472,34 +468,45 @@ impl AppCore {
                 }
                 next_tick = Instant::now() + self.tick;
                 match &*recording {
-                    Recording::Active { live, .. } => Arc::clone(&live.session),
+                    Recording::Active { live, .. } => {
+                        if live.mic_only && !lost.contains(&Speaker::Them) {
+                            lost.push(Speaker::Them);
+                        }
+                        Arc::clone(&live.session)
+                    }
                     _ => return,
                 }
             };
-            if session.is_done() {
+            let status = session.status();
+            self.learn_system_audio(&status.sources);
+            for source in &status.sources {
+                if source.phase.is_failure() && !lost.contains(&source.speaker) {
+                    lost.push(source.speaker);
+                    log(format_args!(
+                        "{meeting_id}: {}",
+                        permissions::channel_lost(source.speaker, source.phase, &source.errors)
+                    ));
+                }
+            }
+            // Capture is over without a stop: nothing is being recorded any
+            // more, so the state must not go on saying `recording`. `stop`
+            // sends `stopping` at once and `idle` when the transcript is
+            // complete.
+            let over = matches!(
+                status.end,
+                Some(EndReason::SourcesEnded | EndReason::CaptureFailed)
+            );
+            if over || session.is_done() {
+                if status.end == Some(EndReason::SourcesEnded) {
+                    log(format_args!(
+                        "{meeting_id}: no audio source is left, so the recording was ended"
+                    ));
+                }
                 if let Err(error) = self.stop(Some(meeting_id), false) {
                     log(format_args!("finishing {meeting_id}: {error}"));
                 }
                 return;
             }
-            let status = session.status();
-            for source in &status.sources {
-                if source.speaker == Speaker::Them && source.phase == SourcePhase::Running {
-                    self.system_audio_seen.store(true, Ordering::SeqCst);
-                }
-                if source.phase == SourcePhase::FailedToStart && !reported_failures {
-                    let reason = source.errors.first().map(ToString::to_string);
-                    log(format_args!(
-                        "{} audio is not being recorded: {}",
-                        source.speaker,
-                        reason.as_deref().unwrap_or("unknown error")
-                    ));
-                }
-            }
-            reported_failures |= status
-                .sources
-                .iter()
-                .any(|s| s.phase == SourcePhase::FailedToStart);
             self.emit_state();
         }
     }
@@ -554,6 +561,8 @@ impl AppCore {
 
     fn close_meeting(&self, live: &Live, summary: &SessionSummary) -> Result<dto::Meeting> {
         let id = &live.meeting_id;
+        // A meeting shorter than a tick is only seen here.
+        self.learn_system_audio(&summary.sources);
         report(id, summary);
         if !summary.finalized
             && let Err(error) = live.store.finalize_transcript(id)
@@ -702,70 +711,86 @@ impl AppCore {
 
     // ---- Permissions ----
 
+    /// The microphone is read from macOS every time, so a change made in
+    /// System Settings shows at the next read.
     pub fn permissions(&self) -> dto::Permissions {
         dto::Permissions {
-            microphone: permission(self.host.microphone_permission()),
+            microphone: permissions::status_name(self.host.microphone_permission()),
             system_audio: self.system_audio_permission(),
         }
     }
 
     /// macOS has no public way to read this permission, so it is
-    /// `undetermined` unless this run saw capture work or the host knows
-    /// better. It is never reported as denied on a guess: a prompt may
-    /// still be open.
+    /// `undetermined` until a recording of this run settled it: `denied`
+    /// once the system source was refused access, `granted` once it
+    /// delivered audio.
     fn system_audio_permission(&self) -> &'static str {
-        if self.system_audio_seen.load(Ordering::SeqCst) {
-            return dto::GRANTED;
+        let seen = *self
+            .system_audio_seen
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        permissions::system_audio_status(self.host.system_audio_permission(), seen)
+    }
+
+    /// Remembers what the system source of a recording says about the
+    /// permission. The latest recording wins: access given or taken away in
+    /// System Settings shows at the next meeting.
+    fn learn_system_audio(&self, sources: &[SourceStatus]) {
+        let evidence = sources
+            .iter()
+            .filter(|source| source.speaker == Speaker::Them)
+            .find_map(|s| permissions::system_audio_evidence(s.phase, &s.errors, s.frames));
+        if let Some(seen) = evidence {
+            *self
+                .system_audio_seen
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner) = seen;
         }
-        self.host
-            .system_audio_permission()
-            .map_or(dto::UNDETERMINED, permission)
+    }
+
+    fn permission(&self, kind: PermissionKind) -> &'static str {
+        match kind {
+            PermissionKind::Microphone => {
+                permissions::status_name(self.host.microphone_permission())
+            }
+            PermissionKind::SystemAudio => self.system_audio_permission(),
+        }
     }
 
     /// Asks for a permission and returns what [`permissions`](Self::permissions)
     /// reports afterwards. May block on a system prompt: call it off the UI
     /// thread. For a permission that is already denied, macOS shows no
     /// prompt again, so this opens its pane in System Settings instead and
-    /// returns `denied`.
+    /// returns `denied`. It never fails.
     pub fn request_permission(&self, kind: PermissionKind) -> &'static str {
-        let before = match kind {
-            PermissionKind::Microphone => permission(self.host.microphone_permission()),
-            PermissionKind::SystemAudio => self.system_audio_permission(),
-        };
-        match before {
-            dto::DENIED => {
+        match permissions::request_action(self.permission(kind)) {
+            RequestAction::Nothing => {}
+            RequestAction::OpenSettings => {
                 if let Err(error) = self.host.open_privacy_settings(kind) {
-                    log(format_args!("opening System Settings: {error}"));
+                    log(format_args!("opening {}: {error}", kind.pane()));
                 }
             }
-            dto::UNDETERMINED => match kind {
+            RequestAction::Prompt => match kind {
                 PermissionKind::Microphone => {
                     self.host.request_microphone_permission();
                 }
                 PermissionKind::SystemAudio => {
-                    // Only a positive answer is trusted: a refusal read here
-                    // can be a prompt that is still open.
+                    // Opens a tap for a moment, which makes macOS ask. Only
+                    // a yes is kept: a refusal read here can be a prompt
+                    // that is still open, so it stays `undetermined` until
+                    // a recording is refused.
                     if self.host.request_system_audio_permission()
                         == Some(PermissionStatus::Granted)
                     {
-                        self.system_audio_seen.store(true, Ordering::SeqCst);
+                        *self
+                            .system_audio_seen
+                            .lock()
+                            .unwrap_or_else(PoisonError::into_inner) = SystemAudioSeen::Delivering;
                     }
                 }
             },
-            _ => {}
         }
-        match kind {
-            PermissionKind::Microphone => permission(self.host.microphone_permission()),
-            PermissionKind::SystemAudio => self.system_audio_permission(),
-        }
-    }
-}
-
-fn permission(status: PermissionStatus) -> &'static str {
-    match status {
-        PermissionStatus::Granted => dto::GRANTED,
-        PermissionStatus::Denied | PermissionStatus::Restricted => dto::DENIED,
-        PermissionStatus::NotDetermined => dto::UNDETERMINED,
+        self.permission(kind)
     }
 }
 

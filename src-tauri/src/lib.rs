@@ -2,7 +2,8 @@
 //!
 //! `app.rs` is the app's logic with no Tauri in it, `commands.rs` exposes it
 //! to the window, `host.rs` is the real audio, model and Finder side,
-//! `tray.rs` is the menu bar icon, `shortcut.rs` the global shortcut.
+//! `tray.rs` is the menu bar icon, `shortcut.rs` the global shortcut,
+//! `permissions.rs` the decisions about the two capture permissions.
 
 use std::fs::{File, TryLockError};
 use std::io;
@@ -15,6 +16,7 @@ pub mod app;
 mod commands;
 pub mod dto;
 mod host;
+pub mod permissions;
 mod shortcut;
 mod tray;
 
@@ -201,6 +203,45 @@ mod tests {
         assert!(super::instance_lock(dir.path()).unwrap().is_none());
         drop(first);
         assert!(super::instance_lock(dir.path()).unwrap().is_some());
+    }
+
+    /// Issue 024: the hardened runtime gets the audio input entitlement and
+    /// nothing else, and the bundle config names the file.
+    #[test]
+    fn entitlements_are_referenced_and_hold_only_audio_input() {
+        let config = config();
+        assert_eq!(
+            config["bundle"]["macOS"]["entitlements"],
+            "Entitlements.plist"
+        );
+        let entitlements = include_str!("../Entitlements.plist");
+        let keys: Vec<&str> = entitlements
+            .split("<key>")
+            .skip(1)
+            .map(|rest| rest.split("</key>").next().unwrap())
+            .collect();
+        assert_eq!(keys, ["com.apple.security.device.audio-input"]);
+        assert_eq!(entitlements.matches("<true/>").count(), 1);
+    }
+
+    /// Without a usage string macOS ends the app at the first request.
+    #[test]
+    fn info_plist_explains_both_kinds_of_capture() {
+        let info = include_str!("../Info.plist");
+        for key in [
+            "NSMicrophoneUsageDescription",
+            "NSAudioCaptureUsageDescription",
+        ] {
+            let after = info
+                .split(&format!("<key>{key}</key>"))
+                .nth(1)
+                .unwrap_or_else(|| panic!("{key} is missing"));
+            let text = after.split("</string>").next().unwrap();
+            assert!(
+                text.contains("transcribed on this Mac and then discarded"),
+                "{key}: {text}"
+            );
+        }
     }
 
     #[test]
