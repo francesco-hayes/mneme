@@ -2169,6 +2169,7 @@ dependencies = [
  "objc2-core-foundation",
  "objc2-foundation",
  "rubato",
+ "signal-hook",
  "thiserror 2.0.21",
 ]
 
@@ -2207,6 +2208,8 @@ version = "0.1.0"
 dependencies = [
  "hound",
  "mneme-core",
+ "serde",
+ "serde_json",
  "sha2 0.11.1",
  "tempfile",
  "ureq",
@@ -3537,6 +3540,26 @@ name = "shlex"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
+
+[[package]]
+name = "signal-hook"
+version = "0.4.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "49f7447afd772ca79ad17ae0a3972a6b0df0cb4b80990fd82707593e9e012a74"
+dependencies = [
+ "libc",
+ "signal-hook-registry",
+]
+
+[[package]]
+name = "signal-hook-registry"
+version = "1.4.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c4db69cba1110affc0e9f7bcd48bbf87b3f4fc7c61fc9155afd4c469eb3d6c1b"
+dependencies = [
+ "errno",
+ "libc",
+]
 
 [[package]]
 name = "simd-adler32"

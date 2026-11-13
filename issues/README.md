@@ -18,8 +18,8 @@ Statuses: `todo`, `in progress`, `done`, `blocked`. An issue is `done` when its 
 | [010](010-meeting-folders.md) | Meeting folders, frontmatter, naming | 04 | store | 001 | done | — |
 | [011](011-transcript-file.md) | Transcript append, parse, sort | 04 | store | 010 | done | — |
 | [026](026-same-minute-folder-suffix.md) | Folder name suffix for same-minute meetings | 04 | store | 011 | done | — |
-| [012](012-notes-and-timeline.md) | Notes safe writes and note timeline | 04 | store | 026 | in progress | — |
-| [013](013-listing-and-recovery.md) | Meeting list and crash recovery | 04 | store | 012 | todo | — |
+| [012](012-notes-and-timeline.md) | Notes safe writes and note timeline | 04 | store | 026 | done | — |
+| [013](013-listing-and-recovery.md) | Meeting list and crash recovery | 04 | store | 012 | in progress | — |
 | [014](014-settings-file.md) | Settings file | 04 | store | 013 | todo | — |
 | [015](015-ui-shell.md) | UI shell: routing, theme, recording bar | 05 | ui | 001 | done | — |
 | [016](016-home-screen.md) | Home screen | 05 | ui | 015 | done | — |

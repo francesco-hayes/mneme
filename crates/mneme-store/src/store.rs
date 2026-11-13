@@ -12,7 +12,7 @@ use crate::meeting::{
     MeetingSummary, NOTES_FILE, format_bool, format_duration,
 };
 use crate::naming::{MAX_FOLDER_NUMBER, normalize_title, numbered_folder_name};
-use crate::safe_write::{safe_write, sync_dir};
+use crate::safe_write::{PendingWrite, safe_write, sync_dir};
 use crate::time::StartTime;
 
 /// All meetings under one root folder.
@@ -280,25 +280,40 @@ pub(crate) fn find_folder(root: &Path, id: &MeetingId) -> Result<PathBuf> {
 
 /// A `notes.md` read from disk: its path, its exact text, the parsed file and
 /// the meeting it describes.
-struct OpenNotes {
-    path: PathBuf,
-    text: String,
-    doc: NotesFile,
-    summary: MeetingSummary,
+pub(crate) struct OpenNotes {
+    pub(crate) path: PathBuf,
+    /// The file as it was read. Not updated by a save.
+    pub(crate) text: String,
+    pub(crate) doc: NotesFile,
+    pub(crate) summary: MeetingSummary,
 }
 
 impl OpenNotes {
     /// Writes the file back if changing `doc` changed its text.
-    fn save(&self) -> Result<()> {
+    pub(crate) fn save(&self) -> Result<()> {
+        match self.stage()? {
+            Some(pending) => pending.commit().map_err(|err| Error::io(&self.path, err)),
+            None => Ok(()),
+        }
+    }
+
+    /// The first half of [`save`](Self::save): writes the new text to a temp
+    /// file beside `notes.md` without replacing it yet. `None` when changing
+    /// `doc` did not change the text, so there is nothing to write.
+    pub(crate) fn stage(&self) -> Result<Option<PendingWrite>> {
         let rendered = self.doc.render();
         if rendered == self.text {
-            return Ok(());
+            return Ok(None);
         }
-        safe_write(&self.path, rendered.as_bytes()).map_err(|err| Error::io(&self.path, err))
+        PendingWrite::stage(&self.path, rendered.as_bytes())
+            .map(Some)
+            .map_err(|err| Error::io(&self.path, err))
     }
 }
 
-fn load(folder: &Path) -> Result<OpenNotes> {
+/// Reads the `notes.md` in `folder`. The caller holds the store lock if it
+/// is going to write the file back.
+pub(crate) fn load(folder: &Path) -> Result<OpenNotes> {
     let path = folder.join(NOTES_FILE);
     let text = fs::read_to_string(&path).map_err(|err| Error::io(&path, err))?;
     let doc = NotesFile::parse(&text).map_err(|err| Error::frontmatter(&path, err))?;

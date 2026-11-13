@@ -31,16 +31,23 @@
 //! - `time`: [`StartTime`].
 //! - `safe_write`: [`safe_write`], the temp-file-and-rename helper every
 //!   whole-file write goes through.
+//! - `append`: what the two files that grow a line at a time share: open for
+//!   append, start on a fresh line after one that was cut off.
 //! - `transcript`: [`TranscriptWriter`], which appends one line per segment
 //!   and sorts the file at the end, and [`Transcript`], the parser.
+//! - `notes`: reading and saving the notes body ([`Store::notes`],
+//!   [`Store::save_notes`]) and the note timeline
+//!   ([`Store::save_notes_at`]).
 //!
-//! The notes body and note timeline, listing and recovery, and the settings
-//! file each get their own module next to these.
+//! Listing and recovery, and the settings file, each get their own module
+//! next to these.
 
+mod append;
 mod error;
 mod frontmatter;
 mod meeting;
 mod naming;
+mod notes;
 mod safe_write;
 mod store;
 mod time;
@@ -51,6 +58,7 @@ pub use meeting::{
     MeetingId, MeetingStatus, MeetingSummary, NOTES_FILE, TIMELINE_FILE, TRANSCRIPT_FILE,
 };
 pub use naming::{DEFAULT_FOLDER_TITLE, sanitize_title};
+pub use notes::SavedNotes;
 pub use safe_write::{is_temp_file_name, safe_write};
 pub use store::{FinishedMeeting, NewMeeting, Store};
 pub use time::{ParseStartTimeError, StartTime};

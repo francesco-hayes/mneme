@@ -15,13 +15,14 @@
 //! newline is a line that was cut off mid-write: the parser skips it, and the
 //! next append starts on a fresh line.
 
-use std::fs::{self, File, OpenOptions};
-use std::io::{self, Read, Seek, SeekFrom, Write};
+use std::fs::{self, File};
+use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use mneme_core::{Segment, Speaker, format_timestamp, parse_timestamp};
 
+use crate::append::{is_file_at, is_linked, open_for_append, write_lines};
 use crate::error::{Error, Result};
 use crate::meeting::{MeetingId, TRANSCRIPT_FILE};
 use crate::safe_write::PendingWrite;
@@ -208,16 +209,9 @@ impl TranscriptWriter {
                 // keeps the line, wherever the folder went.)
                 return Err(err);
             }
-            // After a line cut off by a crash or a full disk, start a new
-            // one. If the check itself fails, a spare newline does no harm.
-            if !ends_with_newline(&mut self.file).unwrap_or(false) {
-                line.insert(0, '\n');
-            }
-            // One write for the whole line: the file is in append mode, so
-            // it lands at the end in one piece.
-            self.file
-                .write_all(line.as_bytes())
-                .map_err(|err| Error::io(&self.path, err))?;
+            // One write for the whole line, on a fresh line if the last one
+            // was cut off by a crash or a full disk.
+            write_lines(&mut self.file, &line).map_err(|err| Error::io(&self.path, err))?;
         }
 
         // Outside the lock: the sync is the slow part (a few milliseconds),
@@ -477,62 +471,6 @@ fn read_or_empty(path: &Path) -> Result<Vec<u8>> {
         Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(Vec::new()),
         Err(err) => Err(Error::io(path, err)),
     }
-}
-
-/// Opens the transcript for appending, creating it if it is missing. Also
-/// readable, to look at how the file ends.
-fn open_for_append(path: &Path) -> Result<File> {
-    OpenOptions::new()
-        .read(true)
-        .append(true)
-        .create(true)
-        .open(path)
-        .map_err(|err| Error::io(path, err))
-}
-
-/// Whether the file is empty or its last byte is a newline, so that the next
-/// line can go straight after it.
-fn ends_with_newline(file: &mut File) -> io::Result<bool> {
-    let len = file.metadata()?.len();
-    if len == 0 {
-        return Ok(true);
-    }
-    // In append mode the position only matters for reading; every write goes
-    // to the end.
-    file.seek(SeekFrom::Start(len - 1))?;
-    let mut last = [0u8; 1];
-    file.read_exact(&mut last)?;
-    Ok(last[0] == b'\n')
-}
-
-/// Whether `path` names the very file that `file` has open.
-#[cfg(unix)]
-fn is_file_at(file: &File, path: &Path) -> bool {
-    use std::os::unix::fs::MetadataExt;
-
-    match (file.metadata(), fs::metadata(path)) {
-        (Ok(open), Ok(named)) => open.dev() == named.dev() && open.ino() == named.ino(),
-        _ => false,
-    }
-}
-
-#[cfg(not(unix))]
-fn is_file_at(_file: &File, path: &Path) -> bool {
-    path.is_file()
-}
-
-/// Whether the open file still has a name somewhere. False once it has been
-/// deleted or replaced: writes to it would then go nowhere a person can see.
-#[cfg(unix)]
-fn is_linked(file: &File) -> bool {
-    use std::os::unix::fs::MetadataExt;
-
-    file.metadata().is_ok_and(|meta| meta.nlink() > 0)
-}
-
-#[cfg(not(unix))]
-fn is_linked(_file: &File) -> bool {
-    true
 }
 
 #[cfg(test)]
