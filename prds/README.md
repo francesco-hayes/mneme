@@ -8,7 +8,7 @@ One PRD per build area. Source of truth for scope is [mneme-scope.md](../mneme-s
 | [01](01-audio-capture.md) | Audio capture: mic + system audio | Build step 1; gaps "System audio + mic", "Me vs. them" | 002–004 |
 | [02](02-transcription-and-models.md) | Transcription and models | Build step 2; MVP feature 5; gap "Model download manager" | 005–008 |
 | [03](03-live-pipeline.md) | Live pipeline | Build step 3; MVP feature 2; gap "Audio retention rule" | 009 |
-| [04](04-storage.md) | Storage: meeting folders, transcript, notes, settings | Build step 4; "Storing meetings"; gap "Incremental saves" | 010–014 |
+| [04](04-storage.md) | Storage: meeting folders, transcript, notes, settings | Build step 4; "Storing meetings"; gap "Incremental saves" | 010–014, 026 |
 | [05](05-ui.md) | UI: first run, Home, meeting views, Settings | Build step 5; MVP features 3 and 4; Design and UI | 015–020 |
 | [06](06-integration-and-finish.md) | Integration and finish: commands, menu bar, shortcut, permissions, signing | Build step 6; gap "Recording indicator" | 021–025 |
 

@@ -1,6 +1,6 @@
 # 012: Notes safe writes and note timeline
 
-Status: todo · PRD: [04](../prds/04-storage.md) · Lane: store · Depends on: 011 · Owns: `crates/mneme-store/`
+Status: todo · PRD: [04](../prds/04-storage.md) · Lane: store · Depends on: 026 · Owns: `crates/mneme-store/`
 
 ## Goal
 

@@ -91,7 +91,7 @@ Mneme/
   2026-10-27 1430 Meeting/      ← default title kept
 ```
 
-- **Folder names** are `YYYY-MM-DD HHMM Title`, using the start time. A meeting that keeps its default title is `Meeting`; the title shown in the app ("Meeting, Oct 27 2:30 PM") comes from the frontmatter. The folder is renamed when the title changes, but never while recording.
+- **Folder names** are `YYYY-MM-DD HHMM Title`, using the start time. A meeting that keeps its default title is `Meeting`; the title shown in the app ("Meeting, Oct 27 2:30 PM") comes from the frontmatter. The folder is renamed when the title changes, but never while recording. A second meeting started in the same minute gets a numeric suffix (`2026-10-27 1430 Meeting 2`).
 - **Stable ID** in the frontmatter, not the folder name, so a rename never breaks links or the index.
 - **Strict transcript lines:** `[hh:mm:ss] Me|Them: text`, appended as they arrive. Search, citations and jump-to-line parse this format.
 - **Home list** scans the meeting folders and reads their frontmatter; fine for hundreds of meetings.
@@ -136,6 +136,7 @@ Newest first. Add a row whenever something is settled.
 
 | Date | Decision | Rationale |
 | --- | --- | --- |
+| 2026-11-12 | A second meeting started in the same minute gets a numeric folder suffix (`2026-10-27 1430 Meeting 2`) | Start, stop, start again within one minute wants the same folder name; a recording must never fail to start. Corrects the assumption in the folder-name row below. |
 | 2026-11-12 | Note timing is saved from v1: while recording, each autosave appends changed note lines with the meeting time to `notes-timeline.jsonl` | The time a line was typed cannot be recovered later; v2 enhancement uses it to match notes to the transcript; append-only, so edits never break it. |
 | 2026-11-12 | Meeting folders are named `YYYY-MM-DD HHMM Title`; a meeting that keeps the default title uses `Meeting` | Folders sort in true time order; the date is never doubled; two meetings cannot clash because they cannot start in the same minute. |
 | 2026-10-27 | Meetings stored as Markdown files, one folder per meeting; SQLite only as a rebuildable index later | Plain data on disk the user owns; no schema, migrations or export step; search and RAG still work from a derived index. |

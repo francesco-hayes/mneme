@@ -17,7 +17,8 @@ Statuses: `todo`, `in progress`, `done`, `blocked`. An issue is `done` when its 
 | [009](009-live-session.md) | Live session: capture to transcript | 03 | pipeline | 004, 006, 011 | todo | open |
 | [010](010-meeting-folders.md) | Meeting folders, frontmatter, naming | 04 | store | 001 | done | — |
 | [011](011-transcript-file.md) | Transcript append, parse, sort | 04 | store | 010 | in progress | — |
-| [012](012-notes-and-timeline.md) | Notes safe writes and note timeline | 04 | store | 011 | todo | — |
+| [026](026-same-minute-folder-suffix.md) | Folder name suffix for same-minute meetings | 04 | store | 011 | todo | — |
+| [012](012-notes-and-timeline.md) | Notes safe writes and note timeline | 04 | store | 026 | todo | — |
 | [013](013-listing-and-recovery.md) | Meeting list and crash recovery | 04 | store | 012 | todo | — |
 | [014](014-settings-file.md) | Settings file | 04 | store | 013 | todo | — |
 | [015](015-ui-shell.md) | UI shell: routing, theme, recording bar | 05 | ui | 001 | done | — |
@@ -41,7 +42,7 @@ Issues in one lane run one after another because they share files. Different lan
 | base | whole repo, once | 001 |
 | audio | `crates/mneme-audio/` | 002 → 003 → 004 |
 | transcribe | `crates/mneme-transcribe/` | 005 → 006 → 007 → 008 |
-| store | `crates/mneme-store/` | 010 → 011 → 012 → 013 → 014 |
+| store | `crates/mneme-store/` | 010 → 011 → 026 → 012 → 013 → 014 |
 | ui | `src/`, frontend config | 015 → 016 → 017 → 018 → 019 → 020 |
 | pipeline | `crates/mneme-pipeline/` | 009 |
 | app | `src-tauri/`, `src/lib/api.tauri.ts` | 021 → 022 → 023 → 024 → 025 |
