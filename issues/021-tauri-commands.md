@@ -19,6 +19,15 @@ Connect the UI to the real crates: every method in the API contract works in the
 9. Core logic lives in plain Rust functions that take the state, so tests run without a Tauri runtime. Errors cross to the UI as readable messages.
 10. Network: confirm the app's capabilities and CSP still allow no remote access from the webview; the model download runs in Rust only.
 
+## Notes from earlier issues
+
+- From 001: `beforeDevCommand` in `tauri.conf.json` is `VITE_MNEME_API=mock pnpm dev`; set it back to `pnpm dev` once `tauri.ts` is real. Add the area crates to `src-tauri/Cargo.toml`. The mock's behavior where the contract is silent is listed in issue 001's Result ("Contract gaps"); match it or change the mock.
+- From 005: a `WhisperEngine` still alive at process exit aborts the process (a Metal assert). Do not keep it in a static or in state that outlives quit; quitting mid-recording stops the session and drops the engine first.
+- From 005: the first load of a model can take about 7 s while Metal compiles shaders; the UI needs a starting state rather than a frozen button.
+- From 015: the recording bar shows `elapsedSecs` exactly as sent and does not count by itself, so emit the recording state about once a second.
+- From 015: nobody has opened the real app window yet. Check the top bar against the native title bar, that `AccentColor` follows the system accent in WKWebView, and that styles load under `pnpm tauri dev` (Vite injects `<style>` tags; add a `devCsp` if they are blocked).
+- From 015: a stop that bypasses the UI's `useRecording().stop()` (menu bar, shortcut) skips the editor's before-stop flush. Emit an event the UI can flush on before the backend stops, or accept that the editor's autosave covers it, and say which.
+
 ## Acceptance criteria
 
 - [ ] Tests with fake sources and a fake transcriber: start then stop produces a complete meeting on disk with transcript and duration; double start is refused; start with no model is refused with a clear message; notes saved during recording produce timeline entries; recovery runs on launch.

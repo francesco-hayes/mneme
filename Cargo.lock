@@ -2100,7 +2100,6 @@ dependencies = [
  "mneme-core",
  "objc2",
  "objc2-av-foundation",
- "objc2-foundation",
  "rubato",
  "thiserror 2.0.21",
 ]

@@ -7,3 +7,12 @@ license.workspace = true
 
 [dependencies]
 mneme-core = { workspace = true }
+cpal = "0.18.2"
+rubato = "5.1.0"
+hound = "3.5.1"
+thiserror = "2.0.21"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6.5"
+objc2-av-foundation = { version = "0.3.2", default-features = false, features = ["std", "AVCaptureDevice", "AVMediaFormat", "block2"] }
+block2 = "0.6.2"

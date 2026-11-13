@@ -16,6 +16,12 @@ One `Session` that runs a meeting: two sources in, labeled transcript lines appe
 6. **Audio retention**: samples are freed after transcription. With `MNEME_KEEP_AUDIO=1`, also write `mic.wav` and `system.wav` to a given folder. Off by default.
 7. The transcriber runs off the async runtime's core threads (it blocks for seconds). Loading the model is the caller's job; the session receives a ready transcriber.
 
+## Notes from earlier issues
+
+- From 005: a `WhisperEngine` still alive when the process exits aborts it (a Metal assert in whisper.cpp). The session must never hold the engine in a static, and `stop()` must leave nothing that keeps it alive; the caller drops the engine after stop.
+- From 005: `Transcriber::transcribe(&self, samples, &Language) -> Result<Vec<TextSpan>, TranscribeError>`; `TextSpan::into_segment(speaker, chunk_start_ms)` gives the `Segment`. `FakeTranscriber` scripts text, errors and a per-call delay.
+- From 005: the first load of a model can take about 7 s while Metal compiles shaders. Loading stays the caller's job, off the UI thread.
+
 ## Acceptance criteria
 
 All with fake sources and a fake transcriber unless noted:
