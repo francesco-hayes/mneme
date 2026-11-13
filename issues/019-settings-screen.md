@@ -16,6 +16,13 @@ MVP feature 5 and the model manager: pick the default model, manage downloads, s
 6. **Global shortcut**: a recorder field. Unset by default, shown as "None". Click, press a combination, saved through `api.updateSettings`; a Clear button. Requires at least one modifier. A registration error from the backend is shown and the previous value restored.
 7. Reusable pieces (model row, download progress) are exported for First run (issue 020).
 
+## Notes from earlier issues
+
+- From 007: the real catalog has ten models: `tiny`, `tiny.en`, `base`, `base.en`, `small`, `small.en`, `medium`, `medium.en`, `large-v3-turbo`, `large-v3` (77 MB to 3.1 GB). The mock's five ids are all valid; align the mock's catalog with the real one (ids, names, sizes, notes are in issue 007's Result and `crates/mneme-transcribe/src/models/catalog.rs`, which you may read but not edit) so the list is designed for ten rows.
+- From 007: with the real backend, `cancelled` arrives shortly after `cancelDownload` returns, not at once, and can take up to about 35 s if the connection was still being set up. Show a cancelling state. The first `downloading` event may arrive just after `downloadModel` resolves. `verifying` is brief.
+- From 007: deleting a model that is not installed is an error ("Base is not installed."). Disk space is not checked before a download; a full disk arrives as a download error.
+- From 005: the engine validates language codes but exports no list of languages; the UI carries its own list.
+
 ## Acceptance criteria
 
 - [ ] Tests: list rendering; download progress through to installed; cancel; error and retry; first install becomes default; deleting the default reassigns; the English-only warning; shortcut record, clear, modifier rule and error restore.
