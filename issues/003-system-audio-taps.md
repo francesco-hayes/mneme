@@ -33,9 +33,30 @@ Capture what the Mac is playing (the other side of a call) as `Speaker::Them` fr
 - [ ] Play audio from another app; the ignored live test or example records it cleanly.
 - [ ] Mneme's own sounds are not captured.
 - [ ] Switch output device mid-capture; capture continues.
-- [ ] After the process exits, Audio MIDI Setup shows no leftover aggregate device.
+- [x] After the process exits, Audio MIDI Setup shows no leftover aggregate device. (Checked 2026-11-12 by the live run below and `system_profiler SPAudioDataType` afterwards, not in Audio MIDI Setup itself.)
 
 ## Result
+
+### Live run, 2026-11-12 (orchestrator, after the implementation)
+
+First contact with a real tap. Built from commit `0a3639f` in a clean copy and run through the bundle wrapper:
+
+```
+MNEME_LIVE_TEST_TARGET=lib crates/mneme-audio/scripts/live-system-test.sh live_tap_session
+```
+
+Outcome: `live_tap_session_leaves_nothing_behind` passed in 2.59 s.
+
+- The tap was created and reported `TapFormat { sample_rate: 48000, channels: 2, kind: F32, interleaved: true }`.
+- The aggregate device was created and runs at 48,000 Hz (default output: built-in speakers, 48 kHz).
+- The session opened with the access check on, and it was not refused.
+- While open, the tap and the aggregate device were both listed. After teardown: devices 4 → 4, taps 0 → 0, no teardown errors, callback context not leaked.
+- After the process exited, `system_profiler SPAudioDataType` listed only the Mac's own devices and no aggregate device.
+
+So these are now executed, once, on macOS 27.0.1: `AudioHardwareCreateProcessTap`, reading a real tap's format, `AudioHardwareCreateAggregateDevice`, creating the IO proc, `AudioDeviceStart`, the access check, and the four teardown calls.
+
+Still never executed: recording real audio to a WAV and listening to it, capture through silence, excluding this process's own sound, following an output device change, the permission-request helpers, and any other macOS version.
+
 
 Implemented on 2026-11-12. All four acceptance criteria pass. **No real tap has been created and no system audio has been captured**: the hard limits of this run forbade it, so every Core Audio call that creates, starts, checks or destroys something has only been compiled. All four manual checks are open, and they are the first time this code meets a real tap. Read "What has never been executed" before relying on any of it.
 
