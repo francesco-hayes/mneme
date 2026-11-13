@@ -15,6 +15,10 @@ One system-wide shortcut that toggles recording, off until the user sets it.
 5. The shortcut string format accepted by the backend matches what the Settings recorder (issue 019) produces. If they differ, convert in `src-tauri` and note it under Follow-ups.
 6. A start error from the shortcut opens the window showing the error, as in issue 022.
 
+## Notes from earlier issues
+
+- From 019: the Settings recorder saves `[Control+][Alt+][Shift+][Command+]<KeyboardEvent.code>`, modifiers always in that order, for example `Shift+Command+KeyR`, `Control+Alt+Space`, `Alt+F5`; null means none. It was written to match the parser in the Tauri global-shortcut plugin (global-hotkey `parse_hotkey`), read but never run: confirm it parses. `updateSettings({ globalShortcut })` must reject with a readable sentence and keep the old shortcut on failure.
+
 ## Acceptance criteria
 
 - [ ] Tests for the pure parts: parsing and validating shortcut strings from the UI format; toggle decision for idle, recording and stopping; failed registration leaves the old setting.
