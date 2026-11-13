@@ -45,7 +45,8 @@ Issues in one lane run one after another because they share files. Different lan
 | store | `crates/mneme-store/` | 010 → 011 → 026 → 012 → 013 → 014 |
 | ui | `src/`, frontend config | 015 → 016 → 017 → 018 → 019 → 020 |
 | pipeline | `crates/mneme-pipeline/` | 009 |
-| app | `src-tauri/`, `src/lib/api.tauri.ts` | 021 → 022 → 023 → 024 → 025 |
+| app | `src-tauri/`, `src/lib/api/tauri.ts` | 021 → 022 → 023 → 024 |
+| release | `scripts/`, `docs/`, root `README.md`, new overlay config files in `src-tauri/` | 025, alongside 022–024 |
 
 ## Rules for whoever implements an issue
 

@@ -1,10 +1,14 @@
 # 025: Signing, notarization, local-only audit
 
-Status: todo · PRD: [06](../prds/06-integration-and-finish.md) · Lane: app · Depends on: 024 · Owns: `src-tauri/`, `scripts/`, `docs/`
+Status: todo · PRD: [06](../prds/06-integration-and-finish.md) · Lane: release · Depends on: 021 · Owns: `scripts/`, `docs/`, root `README.md`, new overlay config files in `src-tauri/`
 
 ## Goal
 
 Dev builds that keep their permissions between rebuilds, a scripted path to a notarized release, and proof the app is local-only.
+
+## Running alongside 022–024
+
+Order changed 2026-11-12: this issue runs at the same time as 022, 023 and 024, which own `src-tauri/`. So it must not edit any existing file under `src-tauri/` (`tauri.conf.json`, `Cargo.toml`, sources, capabilities). Signing and release settings go in separate overlay config files that the Tauri CLI merges with `--config` (for example `src-tauri/tauri.release.conf.json`), plus scripts. Anything that truly needs a change to an existing `src-tauri/` file is written under Follow-ups for the orchestrator to apply after 024. The entitlements file and `Info.plist` usage strings belong to 024; reference them, do not create them. The manual-check list in `docs/release.md` is assembled from the issue files as they stand; note which of 022–024 were not finished when it was written.
 
 ## Scope
 

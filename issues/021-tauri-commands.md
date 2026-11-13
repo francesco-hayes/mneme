@@ -1,6 +1,6 @@
 # 021: Tauri commands and events
 
-Status: todo · PRD: [06](../prds/06-integration-and-finish.md) · Lane: app · Depends on: 009, 007, 014, 020 · Owns: `src-tauri/`, `src/lib/api/tauri.ts`
+Status: todo · PRD: [06](../prds/06-integration-and-finish.md) · Lane: app · Depends on: 009, 007, 014 · Owns: `src-tauri/`, `src/lib/api/tauri.ts`
 
 ## Goal
 
@@ -20,6 +20,8 @@ Connect the UI to the real crates: every method in the API contract works in the
 10. Network: confirm the app's capabilities and CSP still allow no remote access from the webview; the model download runs in Rust only.
 
 ## Notes from earlier issues
+
+- Order changed 2026-11-12: this issue no longer waits for the last UI screen (020). It needs only the API contract in `src/lib/api/types.ts`. The UI lane may still be working in `src/` while this runs; touch nothing there except `src/lib/api/tauri.ts`, and expect Settings and First run to be placeholders or mid-change when you open the app window.
 
 - From 001: `beforeDevCommand` in `tauri.conf.json` is `VITE_MNEME_API=mock pnpm dev`; set it back to `pnpm dev` once `tauri.ts` is real. Add the area crates to `src-tauri/Cargo.toml`. The mock's behavior where the contract is silent is listed in issue 001's Result ("Contract gaps"); match it or change the mock.
 - From 005: a `WhisperEngine` still alive at process exit aborts the process (a Metal assert). Do not keep it in a static or in state that outlives quit; quitting mid-recording stops the session and drops the engine first.
