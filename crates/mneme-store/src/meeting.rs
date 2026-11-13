@@ -132,6 +132,24 @@ pub struct MeetingSummary {
     pub folder: PathBuf,
 }
 
+/// One meeting in full, as the meeting view shows it: the summary, the
+/// notes, and how long the transcript is. From [`Store::load_meeting`].
+///
+/// Like the summary it is a snapshot of the files at the moment of the call.
+///
+/// [`Store::load_meeting`]: crate::Store::load_meeting
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Meeting {
+    pub summary: MeetingSummary,
+    /// The body of `notes.md`, byte for byte: what
+    /// [`Store::notes`](crate::Store::notes) returns.
+    pub notes: String,
+    /// How many well-formed lines `transcript.md` has: what
+    /// [`Store::transcript_line_count`](crate::Store::transcript_line_count)
+    /// returns.
+    pub transcript_line_count: usize,
+}
+
 impl MeetingSummary {
     /// Path of this meeting's `notes.md`.
     pub fn notes_path(&self) -> PathBuf {

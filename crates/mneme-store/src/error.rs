@@ -36,6 +36,17 @@ pub enum Error {
     #[error("no meeting with id {id}")]
     MeetingNotFound { id: MeetingId },
 
+    /// More than one folder under the root has a `notes.md` with this id,
+    /// which happens when a meeting folder is copied by hand. The store does
+    /// not guess which copy is meant: every call that takes this id fails
+    /// this way until one of the folders is removed or given another id.
+    /// `folders` lists them all, sorted by path. Nothing was changed.
+    #[error("meeting id {id} is used by {} folders: {}", folders.len(), folder_names(folders))]
+    DuplicateId {
+        id: MeetingId,
+        folders: Vec<PathBuf>,
+    },
+
     /// A folder with the wanted name is already there. Nothing was changed.
     ///
     /// Returned when a title the user chose needs a folder name that is
@@ -70,6 +81,15 @@ impl Error {
             source,
         }
     }
+}
+
+/// The names of several folders, each in quotes, separated by commas.
+fn folder_names(paths: &[PathBuf]) -> String {
+    let names: Vec<String> = paths
+        .iter()
+        .map(|path| format!("\"{}\"", folder_name(path)))
+        .collect();
+    names.join(", ")
 }
 
 fn folder_name(path: &Path) -> String {

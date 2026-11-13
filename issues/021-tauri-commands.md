@@ -44,6 +44,9 @@ Connect the UI to the real crates: every method in the API contract works in the
 - From 018: `getMeeting` called right after the recording state goes idle must already return the final status, `durationSecs` and `transcriptLineCount`; the view reads the meeting once at that moment. Emit idle only after the store has finished the meeting. In the app window, check with a long transcript: open and scroll speed of the pane, that Shift-Command-T reaches the page, that Edit > Copy runs the pane's copy handler, and that Select All stays inside the list.
 - From 016: Home marks the live row from `status: recording` in `listMeetings` and re-reads when `RecordingState.meetingId` flips between an id and null.
 
+- From 013: open one `Store` per root and keep it for the life of the process. Call `recover()` once before the first list and log `recovered`, `failed` and `warnings`. A meeting in `failed` is still `recording` on disk with nothing recording it; do not show it as live. `listMeetings` is `list_meetings()?.meetings` (log the warnings; the contract has no place for them). `getMeeting` is `load_meeting(&id)`. Show `Error::DuplicateId`'s message as is. A changed meetings root means a new `Store` plus `recover()` on it. Recovery assumes one running copy of the app per root: make the app single-instance.
+- From 004: `Recorder::start` never blocks but `stop()` waits for devices to close; call it off the UI thread. A source that stays `Starting` for more than a second or two most likely has a permission prompt open. `PermissionDenied` as the first error of a `FailedToStart` source is the signal to send the user to System Settings.
+
 ## Acceptance criteria
 
 - [ ] Tests with fake sources and a fake transcriber: start then stop produces a complete meeting on disk with transcript and duration; double start is refused; start with no model is refused with a clear message; notes saved during recording produce timeline entries; recovery runs on launch.

@@ -1,5 +1,6 @@
 //! The store: a root folder with one folder per meeting.
 
+use std::collections::HashSet;
 use std::fs::{self, OpenOptions};
 use std::io;
 use std::path::{Path, PathBuf};
@@ -7,8 +8,10 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use crate::error::{Error, Result};
 use crate::frontmatter::NotesFile;
+use crate::list::FolderHints;
+pub(crate) use crate::list::find_folder;
 use crate::meeting::{
-    KEY_DURATION, KEY_ID, KEY_STATUS, KEY_TITLE, KEY_TITLE_EDITED, MeetingId, MeetingStatus,
+    KEY_DURATION, KEY_STATUS, KEY_TITLE, KEY_TITLE_EDITED, MeetingId, MeetingStatus,
     MeetingSummary, NOTES_FILE, format_bool, format_duration,
 };
 use crate::naming::{MAX_FOLDER_NUMBER, normalize_title, numbered_folder_name};
@@ -17,9 +20,19 @@ use crate::time::StartTime;
 
 /// All meetings under one root folder.
 ///
-/// The folders are the source of truth. The store keeps nothing in memory
-/// about them: every call reads the files as they are now, so edits made in
+/// The folders are the source of truth. The store keeps no meeting data in
+/// memory: every call reads the files as they are now, so edits made in
 /// another editor or in Finder are picked up.
+///
+/// It does remember two things for as long as it lives, neither of which is
+/// ever written to disk:
+/// - where each meeting id was at the last scan of the root, so that finding
+///   a meeting does not mean reading every `notes.md` again. This is only a
+///   hint: the folder's `notes.md` is read and must still carry the id
+///   before the hint is used, and anything else falls back to a scan;
+/// - which meetings it created itself, so that
+///   [`recover`](Self::recover) can never mistake a meeting that is being
+///   recorded for one a crash left behind.
 ///
 /// The store knows nothing about where the root should be; the caller passes
 /// the path. Open one `Store` per root and share it (`&Store` is enough, all
@@ -33,6 +46,11 @@ pub struct Store {
     /// with the transcript writers this store hands out, which take it for
     /// each append and for the sort at the end.
     lock: Arc<Mutex<()>>,
+    /// Where each id was at the last scan. See [`FolderHints`].
+    pub(crate) hints: FolderHints,
+    /// Ids of the meetings this value created. They are being recorded, or
+    /// were, by this run of the app; recovery leaves them alone.
+    created: Mutex<HashSet<MeetingId>>,
 }
 
 /// What a new meeting starts with.
@@ -67,6 +85,8 @@ impl Store {
         Ok(Self {
             root,
             lock: Arc::new(Mutex::new(())),
+            hints: FolderHints::default(),
+            created: Mutex::new(HashSet::new()),
         })
     }
 
@@ -121,13 +141,35 @@ impl Store {
             return Err(err);
         }
         sync_dir(&self.root);
+        self.created
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(summary.id.clone());
+        self.hints.created(&summary.id, &summary.folder);
         Ok(summary)
     }
 
-    /// Reads one meeting by id.
+    /// Whether this value created the meeting with this id, which makes it
+    /// a meeting of this run of the app and not a leftover of an earlier
+    /// one.
+    pub(crate) fn created_here(&self, id: &MeetingId) -> bool {
+        self.created
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .contains(id)
+    }
+
+    /// Reads one meeting by id. This is also how an id is resolved to its
+    /// folder: [`MeetingSummary::folder`].
     ///
-    /// The folder is found by scanning the root for a `notes.md` with this
-    /// id, so it works whatever the folder is called now.
+    /// The folder is found by the id in its `notes.md`, never by its name,
+    /// so it works whatever the folder is called now, including after it was
+    /// renamed outside Mneme.
+    ///
+    /// Fails with [`Error::MeetingNotFound`] if no folder has the id, with
+    /// [`Error::DuplicateId`] if more than one has it (the store does not
+    /// pick one), and with [`Error::Frontmatter`] if the folder was found
+    /// but the rest of its frontmatter cannot be used.
     pub fn meeting(&self, id: &MeetingId) -> Result<MeetingSummary> {
         let _guard = self.lock();
         let folder = self.find_folder(id)?;
@@ -206,7 +248,7 @@ impl Store {
 
     /// Ends a recording with the given final status. The caller holds the
     /// lock.
-    fn close(
+    pub(crate) fn close(
         &self,
         mut open: OpenNotes,
         duration_secs: u64,
@@ -237,15 +279,9 @@ impl Store {
         }
         fs::rename(&summary.folder, &target).map_err(|err| Error::io(&summary.folder, err))?;
         sync_dir(&self.root);
+        self.hints.moved(&summary.id, &target);
         summary.folder = target;
         Ok(())
-    }
-
-    /// Finds the folder whose `notes.md` carries this id. Folders that have
-    /// no readable frontmatter are passed over. If the id was copied into
-    /// several folders, the first by name wins.
-    pub(crate) fn find_folder(&self, id: &MeetingId) -> Result<PathBuf> {
-        find_folder(&self.root, id)
     }
 
     pub(crate) fn lock(&self) -> MutexGuard<'_, ()> {
@@ -264,18 +300,6 @@ pub(crate) fn lock(lock: &Mutex<()>) -> MutexGuard<'_, ()> {
     // The mutex guards no data, so a panic in another holder leaves nothing
     // half-updated behind it.
     lock.lock().unwrap_or_else(PoisonError::into_inner)
-}
-
-/// [`Store::find_folder`] for a caller that has the root but not the store.
-pub(crate) fn find_folder(root: &Path, id: &MeetingId) -> Result<PathBuf> {
-    let entries = fs::read_dir(root).map_err(|err| Error::io(root, err))?;
-    entries
-        .filter_map(|entry| entry.ok())
-        .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
-        .map(|entry| entry.path())
-        .filter(|folder| folder_has_id(folder, id))
-        .min()
-        .ok_or_else(|| Error::MeetingNotFound { id: id.clone() })
 }
 
 /// A `notes.md` read from disk: its path, its exact text, the parsed file and
@@ -325,16 +349,6 @@ pub(crate) fn load(folder: &Path) -> Result<OpenNotes> {
         doc,
         summary,
     })
-}
-
-fn folder_has_id(folder: &Path, id: &MeetingId) -> bool {
-    let Ok(text) = fs::read_to_string(folder.join(NOTES_FILE)) else {
-        return false;
-    };
-    let Ok(doc) = NotesFile::parse(&text) else {
-        return false;
-    };
-    matches!(doc.get(KEY_ID), Ok(Some(found)) if found.text == id.as_str())
 }
 
 /// Creates an empty folder under `root` for a new meeting and returns its

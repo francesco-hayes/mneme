@@ -77,6 +77,19 @@ pub fn is_temp_file_name(name: &str) -> bool {
     name.starts_with('.') && name.ends_with(TEMP_SUFFIX)
 }
 
+/// True when `name` is a temp file [`safe_write`] made for the file called
+/// `target` in the same folder: `.<target>.<pid>-<n>.tmp`. Narrower than
+/// [`is_temp_file_name`], for code that is about to delete what it finds.
+pub(crate) fn is_temp_file_of(name: &str, target: &str) -> bool {
+    let is_number = |text: &str| !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit());
+    name.strip_prefix('.')
+        .and_then(|rest| rest.strip_prefix(target))
+        .and_then(|rest| rest.strip_prefix('.'))
+        .and_then(|rest| rest.strip_suffix(TEMP_SUFFIX))
+        .and_then(|rest| rest.split_once('-'))
+        .is_some_and(|(pid, n)| is_number(pid) && is_number(n))
+}
+
 const TEMP_SUFFIX: &str = ".tmp";
 
 /// Flushes a folder's own entry list (new files, renames) to disk. Best
@@ -187,6 +200,42 @@ mod tests {
         // The next save still works with the leftover in place.
         safe_write(&path, b"newer\n").unwrap();
         assert_eq!(fs::read(&path).unwrap(), b"newer\n");
+    }
+
+    #[test]
+    fn a_temp_file_is_recognized_as_belonging_to_its_target_only() {
+        let dir = tempfile::tempdir().unwrap();
+        for target in ["notes.md", "transcript.md"] {
+            let pending = PendingWrite::stage(&dir.path().join(target), b"x").unwrap();
+            let name = pending.temp_path().file_name().unwrap().to_str().unwrap();
+
+            assert!(is_temp_file_of(name, target), "{name}");
+            for other in ["notes.md", "transcript.md", "notes", "md", ""] {
+                assert_eq!(is_temp_file_of(name, other), other == target, "{name}");
+            }
+        }
+
+        assert!(is_temp_file_of(".notes.md.4242-7.tmp", "notes.md"));
+        for name in [
+            "notes.md",
+            ".notes.md",
+            ".notes.md.tmp",
+            ".notes.md..tmp",
+            ".notes.md.4242-7",
+            ".notes.md.4242-7.tmp.bak",
+            ".notes.md.4242.tmp",
+            ".notes.md.-7.tmp",
+            ".notes.md.4242-.tmp",
+            ".notes.md.4242-7x.tmp",
+            ".notes.md.backup-1.tmp",
+            "notes.md.4242-7.tmp",
+            ".notes.mdx.4242-7.tmp",
+            ".my notes.md.4242-7.tmp",
+            ".tmp",
+            "",
+        ] {
+            assert!(!is_temp_file_of(name, "notes.md"), "{name}");
+        }
     }
 
     #[test]

@@ -20,10 +20,18 @@
 //! data: every path is passed in. It does not read the clock or the time zone
 //! either, except in [`StartTime::now_local`].
 //!
+//! Nothing about a meeting is kept anywhere but in its folder. The list of
+//! meetings is a scan of the root ([`Store::list_meetings`]); there is no
+//! index file and no database to fall out of step with the folders.
+//!
 //! # Layout of the crate
 //!
 //! - `store`: [`Store`], the entry point: create, look up, rename and finish
 //!   meetings.
+//! - `list`: scanning the root: [`Store::list_meetings`] with its warnings,
+//!   [`Store::load_meeting`], and finding a folder by id.
+//! - `recovery`: [`Store::recover`], which closes the meetings a crash left
+//!   open.
 //! - `meeting`: [`MeetingSummary`], [`MeetingId`], [`MeetingStatus`] and how
 //!   they map to frontmatter keys.
 //! - `frontmatter`: the line-preserving reader and writer for `notes.md`.
@@ -39,26 +47,29 @@
 //!   [`Store::save_notes`]) and the note timeline
 //!   ([`Store::save_notes_at`]).
 //!
-//! Listing and recovery, and the settings file, each get their own module
-//! next to these.
+//! The settings file gets its own module next to these.
 
 mod append;
 mod error;
 mod frontmatter;
+mod list;
 mod meeting;
 mod naming;
 mod notes;
+mod recovery;
 mod safe_write;
 mod store;
 mod time;
 mod transcript;
 
 pub use error::{Error, FrontmatterError, Result};
+pub use list::{ListWarning, MeetingList, SkipReason};
 pub use meeting::{
-    MeetingId, MeetingStatus, MeetingSummary, NOTES_FILE, TIMELINE_FILE, TRANSCRIPT_FILE,
+    Meeting, MeetingId, MeetingStatus, MeetingSummary, NOTES_FILE, TIMELINE_FILE, TRANSCRIPT_FILE,
 };
 pub use naming::{DEFAULT_FOLDER_TITLE, sanitize_title};
 pub use notes::SavedNotes;
+pub use recovery::{RecoveredMeeting, RecoveryFailure, RecoveryReport};
 pub use safe_write::{is_temp_file_name, safe_write};
 pub use store::{FinishedMeeting, NewMeeting, Store};
 pub use time::{ParseStartTimeError, StartTime};
