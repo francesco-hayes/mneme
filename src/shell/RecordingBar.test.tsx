@@ -15,6 +15,9 @@ afterEach(() => {
 });
 
 const bar = () => screen.queryByRole("region", { name: "Recording" });
+/** The title of the meeting on screen: a field in the top bar. */
+const meetingTitle = () =>
+  screen.getByRole<HTMLInputElement>("textbox", { name: "Meeting title" });
 const button = (name: string) => screen.getByRole("button", { name });
 const click = async (name: string) => {
   fireEvent.click(button(name));
@@ -55,7 +58,8 @@ test("shows the indicator and a running timer while recording", async () => {
 
 test("on the live meeting there is no link to it; elsewhere there is", async () => {
   await startRecording();
-  const title = screen.getByRole("heading", { level: 1 }).textContent;
+  const title = meetingTitle().value;
+  expect(title).toMatch(/^Meeting, /);
 
   // New meeting opened the live meeting.
   expect(screen.queryByRole("button", { name: "Open meeting" })).toBeNull();
@@ -70,7 +74,7 @@ test("on the live meeting there is no link to it; elsewhere there is", async () 
   expect(bar()).toBeInTheDocument();
 
   await click("Open meeting");
-  expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(title!);
+  expect(meetingTitle()).toHaveValue(title);
   expect(screen.queryByRole("button", { name: "Open meeting" })).toBeNull();
 });
 
@@ -131,9 +135,7 @@ test("picks up a recording that was already running", async () => {
 
   expect(screen.getByRole("timer")).toHaveTextContent("0:04");
   await click("Open meeting");
-  expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
-    meeting.title,
-  );
+  expect(meetingTitle()).toHaveValue(meeting.title);
 });
 
 test("follows a recording started and stopped outside the window", async () => {

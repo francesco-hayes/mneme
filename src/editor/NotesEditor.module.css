@@ -1,0 +1,8 @@
+/* The element that holds the editor's shadow root. The editor inside it is
+   styled by CodeMirror's own theme (theme.ts); this only gives it its box. */
+.host {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}

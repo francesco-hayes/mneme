@@ -20,8 +20,11 @@
   --text-body: 13px;
   --text-headline: 15px;
   --text-title: 20px;
+  /* Notes are read and written at length, so they are set a little larger. */
+  --text-editor: 15px;
   --line-tight: 1.25;
   --line-body: 1.45;
+  --line-editor: 1.6;
   --weight-regular: 400;
   --weight-medium: 500;
   --weight-semibold: 600;

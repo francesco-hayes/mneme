@@ -18,6 +18,9 @@ export default defineConfig({
   build: {
     // The app runs in WKWebView on macOS 14.4 or later, which is Safari 17.4.
     target: "safari17",
+    // One file, read from disk inside the app, so its size costs little. The
+    // editor (CodeMirror) is most of it: about 560 kB with it, 250 kB without.
+    chunkSizeWarningLimit: 700,
   },
   test: {
     environment: "jsdom",

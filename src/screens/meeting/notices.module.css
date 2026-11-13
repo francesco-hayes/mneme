@@ -1,0 +1,19 @@
+/* A line of status above the notes, lined up with the text of the editor. */
+.notice {
+  flex: none;
+  padding: var(--space-2)
+    max(var(--space-6), calc((100% - var(--content-width)) / 2));
+}
+
+/* Quieter than an error: the text is safe, and the app is still trying. */
+.warning {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-warning);
+  font-size: var(--text-small);
+}
+
+.warning > svg {
+  flex: none;
+}

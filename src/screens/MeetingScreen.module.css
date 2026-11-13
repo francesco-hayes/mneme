@@ -1,0 +1,19 @@
+/* The area under the top bar. A row, so that a side pane (the transcript,
+   issue 018) can sit beside the notes. */
+.body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* The notes column: notices, then the editor filling what is left. */
+.notes {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.loadError {
+  padding: 0 var(--space-2);
+}

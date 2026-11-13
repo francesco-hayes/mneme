@@ -1,0 +1,31 @@
+.heading {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-headline);
+  font-weight: var(--weight-semibold);
+  line-height: var(--line-tight);
+}
+
+/* Reads as the screen's title until it is pointed at or edited. */
+.input {
+  display: block;
+  width: 100%;
+  max-width: 400px;
+  height: var(--control-height);
+  /* The text sits where a plain title would; the field's box extends past it. */
+  margin-inline-start: calc(-1 * var(--space-2));
+  padding: 0 var(--space-2);
+  border: var(--hairline) solid transparent;
+  border-radius: var(--radius-control);
+  background: transparent;
+  text-overflow: ellipsis;
+}
+
+.input:hover {
+  background: var(--color-hover);
+}
+
+.input:focus {
+  border-color: var(--color-control-border);
+  background: var(--color-control);
+}

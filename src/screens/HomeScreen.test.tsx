@@ -249,11 +249,15 @@ describe("New meeting", () => {
 
     await user.click(newMeeting());
 
-    const title = await heading(/^Meeting, /);
+    // The meeting's title is a field in the top bar.
+    const title = await screen.findByRole<HTMLInputElement>("textbox", {
+      name: "Meeting title",
+    });
+    expect(title.value).toMatch(/^Meeting, /);
     const state = await mockApi.getRecordingState();
     expect(state.status).toBe("recording");
-    expect((await mockApi.getMeeting(state.meetingId!)).title).toBe(
-      title.textContent,
+    expect(title).toHaveValue(
+      (await mockApi.getMeeting(state.meetingId!)).title,
     );
     // On the live meeting the bar has no link to it: this is that meeting.
     expect(screen.getByRole("region", { name: "Recording" })).toBeVisible();
