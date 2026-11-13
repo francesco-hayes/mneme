@@ -30,7 +30,7 @@ Capture what the Mac is playing (the other side of a call) as `Speaker::Them` fr
 
 ## Manual checks
 
-- [ ] Play audio from another app; the ignored live test or example records it cleanly.
+- [x] Play audio from another app; the ignored live test or example records it cleanly. (Measured 2026-11-12, see the second live run below. Not yet listened to by ear.)
 - [ ] Mneme's own sounds are not captured.
 - [ ] Switch output device mid-capture; capture continues.
 - [x] After the process exits, Audio MIDI Setup shows no leftover aggregate device. (Checked 2026-11-12 by the live run below and `system_profiler SPAudioDataType` afterwards, not in Audio MIDI Setup itself.)
@@ -55,7 +55,18 @@ Outcome: `live_tap_session_leaves_nothing_behind` passed in 2.59 s.
 
 So these are now executed, once, on macOS 27.0.1: `AudioHardwareCreateProcessTap`, reading a real tap's format, `AudioHardwareCreateAggregateDevice`, creating the IO proc, `AudioDeviceStart`, the access check, and the four teardown calls.
 
-Still never executed: recording real audio to a WAV and listening to it, capture through silence, excluding this process's own sound, following an output device change, the permission-request helpers, and any other macOS version.
+### Second live run, 2026-11-12: recording real audio
+
+Same clean copy and wrapper, `MNEME_LIVE_SECONDS=5 … live_system_audio_records_to_wav`, run twice with `afplay` as the other app.
+
+| Played | Result |
+| --- | --- |
+| Built-in system sounds, one after another | Passed. 252 frames, 5.02 s continuous, peak 0.533, RMS 0.031. Sound in bursts with exact digital silence between them. Start took 1.8 s. |
+| A generated 1,000 Hz sine at amplitude 0.15 (44.1 kHz stereo file) | Passed. 251 frames, 5.01 s continuous. Recorded frequency 1000.0 Hz over the middle 3 s (zero crossings), peak 0.1498, peak/RMS 1.413 (a pure sine is 1.414), level steady at 0.106 RMS in every half second. Start took 0.1 s. |
+
+What this shows: the whole path works on real system audio (tap, IO proc, downmix of 48 kHz stereo float, resampling to 16 kHz, meeting clock, WAV writer), at the right speed, with no distortion measurable this way, no dropouts over 5 s, and the level of the source file preserved.
+
+Still never executed: listening to a recording by ear, capture through silence, excluding this process's own sound, following an output device change, the permission-request helpers, anything longer than 5 s, and any other macOS version.
 
 
 Implemented on 2026-11-12. All four acceptance criteria pass. **No real tap has been created and no system audio has been captured**: the hard limits of this run forbade it, so every Core Audio call that creates, starts, checks or destroys something has only been compiled. All four manual checks are open, and they are the first time this code meets a real tap. Read "What has never been executed" before relying on any of it.
