@@ -7,3 +7,12 @@ license.workspace = true
 
 [dependencies]
 mneme-core = { workspace = true }
+# whisper.cpp bindings. The `metal` feature builds whisper.cpp's Metal (GPU)
+# backend with its shader source embedded in the binary, so building needs
+# cmake and the Xcode Command Line Tools but not full Xcode. Pinned exactly:
+# see issues/005-whisper-engine.md for the maintenance check behind this.
+whisper-rs = { version = "=0.16.0", features = ["metal"] }
+
+[dev-dependencies]
+# Reads the speech fixture in the integration test.
+hound = "3.5.1"

@@ -1,0 +1,5 @@
+# The repository ignores *.wav; this fixture is the exception.
+# speech.wav is 5.75 s of synthetic speech, 16 kHz mono 16-bit, made with:
+#   say -v Samantha -o speech.aiff "Hello, this is a test of the meeting transcription. The quick brown fox jumps over the lazy dog."
+#   afconvert -f WAVE -d LEI16@16000 -c 1 speech.aiff speech.wav
+!speech.wav
