@@ -1,0 +1,130 @@
+/* The transcript, beside the notes. The notes stay the larger part at every
+   window size: the pane takes a little over a third of the width, never more
+   than 400px, and narrows to 260px at the smallest window (640px), where the
+   notes keep 380px. `contain` keeps the layout of a few thousand lines and
+   the layout of the editor out of each other's way. */
+.pane {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  width: clamp(260px, 36%, 400px);
+  min-height: 0;
+  border-inline-start: var(--hairline) solid var(--color-separator);
+  background: var(--color-bg);
+  contain: content;
+}
+
+.header {
+  display: flex;
+  flex: none;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4) var(--space-2);
+  border-bottom: var(--hairline) solid var(--color-separator);
+}
+
+.heading {
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  line-height: var(--line-tight);
+}
+
+.summary {
+  overflow: hidden;
+  color: var(--color-text-secondary);
+  font-size: var(--text-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Loading, and a transcript with no lines. */
+.message {
+  padding: var(--space-4);
+  color: var(--color-text-secondary);
+  font-size: var(--text-small);
+}
+
+.error {
+  align-items: flex-start;
+  padding: var(--space-4);
+}
+
+.turns {
+  /* The width of the timestamps: `59:59`, and `1:02:03` once there are hours. */
+  --time-width: 32px;
+
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: var(--space-3) var(--space-4) var(--space-8) var(--space-2);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  list-style: none;
+}
+
+.turns[data-hours] {
+  --time-width: 44px;
+}
+
+/* The focus ring would be cut off by the pane's edges; draw it inside. */
+.turns:focus-visible {
+  outline-offset: -3px;
+}
+
+.turn + .turn {
+  margin-top: var(--space-3);
+}
+
+/* Two speakers, told apart by more than color: each turn carries the
+   speaker's name, and what I said sits in a tinted block with a solid bar
+   while what they said is plain text beside a faint one. */
+.speaker {
+  margin-inline-start: calc(var(--time-width) + var(--space-2));
+  padding-inline-start: var(--space-2);
+  padding-bottom: 2px;
+  color: var(--color-text-secondary);
+  font-size: var(--text-caption);
+  font-weight: var(--weight-semibold);
+  line-height: var(--line-tight);
+}
+
+.turn[data-speaker="Me"] .speaker {
+  color: var(--color-text);
+}
+
+.line {
+  display: grid;
+  grid-template-columns: var(--time-width) minmax(0, 1fr);
+  column-gap: var(--space-2);
+  align-items: baseline;
+}
+
+/* Present on every line, and out of the way: small, dim, in a column of its own. */
+.time {
+  color: var(--color-text-tertiary);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+  white-space: nowrap;
+}
+
+.text {
+  padding: 2px var(--space-2);
+  border-inline-start: 2px solid var(--color-separator);
+  overflow-wrap: anywhere;
+}
+
+.turn[data-speaker="Me"] .text {
+  border-inline-start-color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+
+/* The lines of a turn join into one block with rounded outer corners. */
+.line:first-of-type > .text {
+  border-start-end-radius: var(--radius-small);
+}
+
+.line:last-of-type > .text {
+  border-end-end-radius: var(--radius-small);
+}

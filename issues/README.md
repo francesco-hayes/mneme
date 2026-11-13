@@ -24,8 +24,8 @@ Statuses: `todo`, `in progress`, `done`, `blocked`. An issue is `done` when its 
 | [015](015-ui-shell.md) | UI shell: routing, theme, recording bar | 05 | ui | 001 | done | — |
 | [016](016-home-screen.md) | Home screen | 05 | ui | 015 | done | — |
 | [017](017-meeting-live-view.md) | Meeting live view and editor | 05 | ui | 016 | done | — |
-| [018](018-meeting-after-view.md) | Meeting after view and transcript pane | 05 | ui | 017 | in progress | — |
-| [019](019-settings-screen.md) | Settings screen | 05 | ui | 018 | todo | — |
+| [018](018-meeting-after-view.md) | Meeting after view and transcript pane | 05 | ui | 017 | done | — |
+| [019](019-settings-screen.md) | Settings screen | 05 | ui | 018 | in progress | — |
 | [020](020-first-run.md) | First run | 05 | ui | 019 | todo | — |
 | [021](021-tauri-commands.md) | Tauri commands and events | 06 | app | 009, 007, 014 | todo | open |
 | [022](022-menu-bar-icon.md) | Menu bar icon | 06 | app | 021 | todo | open |

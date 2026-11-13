@@ -14,21 +14,11 @@
   font-size: var(--text-small);
 }
 
-/* Reading the list takes a moment at most, so the text only appears if it
-   drags on: no flash of "Loading" each time Home is shown. */
+/* Shown with `appears-late` (styles/base.css): no flash of "Loading" each
+   time Home is shown. */
 .loading {
   padding: var(--space-2);
   color: var(--color-text-secondary);
-  animation: appear 0s linear 400ms both;
-}
-
-@keyframes appear {
-  from {
-    visibility: hidden;
-  }
-  to {
-    visibility: visible;
-  }
 }
 
 .interrupted {

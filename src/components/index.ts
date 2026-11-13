@@ -8,6 +8,7 @@ export {
   GearIcon,
   PlusIcon,
   StopIcon,
+  TranscriptIcon,
   WarningIcon,
 } from "./icons";
 export { InlineError, type InlineErrorProps } from "./InlineError";

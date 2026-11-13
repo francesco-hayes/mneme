@@ -17,3 +17,9 @@
 .warning > svg {
   flex: none;
 }
+
+/* Something worth knowing that asks for nothing: said once, in a low voice. */
+.quiet {
+  color: var(--color-text-secondary);
+  font-size: var(--text-small);
+}

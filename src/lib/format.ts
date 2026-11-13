@@ -154,3 +154,20 @@ export function formatDuration(
   const rest = minutes % 60;
   return rest === 0 ? hours : `${hours} ${unit(rest, "minute", locale)}`;
 }
+
+const countFormats = new Map<string | undefined, Intl.NumberFormat>();
+
+/**
+ * How many lines a transcript has, as words: `no lines`, `1 line`,
+ * `214 lines`, `2,000 lines`.
+ */
+export function formatLineCount(count: number, locale?: string): string {
+  if (count <= 0) return "no lines";
+  if (count === 1) return "1 line";
+  let format = countFormats.get(locale);
+  if (format === undefined) {
+    format = new Intl.NumberFormat(locale);
+    countFormats.set(locale, format);
+  }
+  return `${plainSpaces(format.format(count))} lines`;
+}

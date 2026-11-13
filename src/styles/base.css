@@ -69,3 +69,18 @@ textarea {
   clip-path: inset(50%);
   white-space: nowrap;
 }
+
+/* For "Loading…" text. A read takes a moment at most, so the text only
+   appears if it drags on, and never flashes on the way to the content. */
+.appears-late {
+  animation: appears-late 0s linear 400ms both;
+}
+
+@keyframes appears-late {
+  from {
+    visibility: hidden;
+  }
+  to {
+    visibility: visible;
+  }
+}

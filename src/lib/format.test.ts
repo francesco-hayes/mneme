@@ -3,6 +3,7 @@ import {
   formatDuration,
   formatElapsed,
   formatFullDate,
+  formatLineCount,
   formatMeetingDate,
 } from "./format";
 
@@ -113,4 +114,13 @@ describe("formatDuration", () => {
     expect(formatDuration(-5, "en-US")).toBeNull();
     expect(formatDuration(Number.NaN, "en-US")).toBeNull();
   });
+});
+
+test("counts transcript lines in words", () => {
+  expect(formatLineCount(0)).toBe("no lines");
+  expect(formatLineCount(1)).toBe("1 line");
+  expect(formatLineCount(2)).toBe("2 lines");
+  expect(formatLineCount(214, "en-US")).toBe("214 lines");
+  expect(formatLineCount(2000, "en-US")).toBe("2,000 lines");
+  expect(formatLineCount(2000, "de-DE")).toBe("2.000 lines");
 });

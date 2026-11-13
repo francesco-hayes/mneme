@@ -1,0 +1,16 @@
+/* The count is the "ready" sign: it reads after the name, a step quieter. */
+.count {
+  color: var(--color-text-secondary);
+}
+
+/* Held down while the pane is open, like a toolbar toggle. */
+.toggle[aria-expanded="true"] {
+  border-color: transparent;
+  background: var(--color-accent-soft);
+  box-shadow: none;
+}
+
+.toggle > svg {
+  flex: none;
+  color: var(--color-text-secondary);
+}

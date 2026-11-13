@@ -81,3 +81,12 @@ export function WarningIcon() {
     </Icon>
   );
 }
+
+/** Lines of speech from two sides: a transcript. */
+export function TranscriptIcon() {
+  return (
+    <Icon>
+      <path d="M2.5 4h7M6.5 8h7M2.5 12h7" />
+    </Icon>
+  );
+}

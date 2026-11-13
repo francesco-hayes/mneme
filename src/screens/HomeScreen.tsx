@@ -181,7 +181,7 @@ export function HomeScreen({
         />
       )}
       {meetings.status === "loading" && (
-        <p className={styles.loading} role="status">
+        <p className={`${styles.loading} appears-late`} role="status">
           Loading meetings…
         </p>
       )}
