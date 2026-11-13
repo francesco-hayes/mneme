@@ -25,6 +25,8 @@ One `Session` that runs a meeting: two sources in, labeled transcript lines appe
 - From 011: take the writer from `Store::transcript_writer(&id)` (it is `Send + 'static`) and move it to the worker; the sink adapter is `append(&segment)` and `finalize()`. `append` syncs to disk (about 4 ms). Do not retry an `append` that errored: the line may already be written. `finalize` and the store's `finish_meeting` can run in either order. For `MNEME_KEEP_AUDIO`, take the folder from `store.meeting(&id)`, not `writer.path()`.
 - From 002: the frame channel is `std::sync::mpsc` (`frame_channel()`); clone one sender into both sources. A source drops its sender when it ends, so the receiver's iterator ends when both are done. Poll `is_running()` and `take_errors()` for failures.
 
+- From 006: one `Chunker` per speaker (`push(&frame) -> Vec<Chunk>`, `flush() -> Option<Chunk>`). Call `flush()` at stop and also when a source ends or fails, or its last words are lost. Chunks arrive up to 28 s after their `start_ms`, so the two speakers' chunks reach the queue in completion order; the sort at stop handles it. The engine can return no spans for a chunk; that is not an error. Backlog is the sum of `chunk.duration_ms()` over the queue. Write `MNEME_KEEP_AUDIO` WAVs from frames, not chunks, because the chunker drops silence.
+
 ## Acceptance criteria
 
 All with fake sources and a fake transcriber unless noted:
