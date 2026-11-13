@@ -15,8 +15,8 @@ Statuses: `todo`, `in progress`, `done`, `blocked`. An issue is `done` when its 
 | [007](007-model-catalog-downloads.md) | Model catalog and download manager | 02 | transcribe | 006 | todo | — |
 | [008](008-benchmark-cli.md) | Benchmark CLI and speed table | 02 | transcribe | 007 | todo | open |
 | [009](009-live-session.md) | Live session: capture to transcript | 03 | pipeline | 004, 006, 011 | todo | open |
-| [010](010-meeting-folders.md) | Meeting folders, frontmatter, naming | 04 | store | 001 | in progress | — |
-| [011](011-transcript-file.md) | Transcript append, parse, sort | 04 | store | 010 | todo | — |
+| [010](010-meeting-folders.md) | Meeting folders, frontmatter, naming | 04 | store | 001 | done | — |
+| [011](011-transcript-file.md) | Transcript append, parse, sort | 04 | store | 010 | in progress | — |
 | [012](012-notes-and-timeline.md) | Notes safe writes and note timeline | 04 | store | 011 | todo | — |
 | [013](013-listing-and-recovery.md) | Meeting list and crash recovery | 04 | store | 012 | todo | — |
 | [014](014-settings-file.md) | Settings file | 04 | store | 013 | todo | — |

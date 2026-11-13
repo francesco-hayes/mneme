@@ -7,3 +7,14 @@ license.workspace = true
 
 [dependencies]
 mneme-core = { workspace = true }
+# Local time with its UTC offset: folder names, default titles, the `date` key.
+chrono = { version = "0.4.45", default-features = false, features = ["std", "clock"] }
+# Random meeting ids.
+uuid = { version = "1.29.2", features = ["v4"] }
+thiserror = "2.0.21"
+
+[dev-dependencies]
+tempfile = "3.27.0"
+# A real YAML parser, used only by tests to prove that the frontmatter this
+# crate writes is valid YAML. The crate itself never parses YAML with it.
+saphyr = { version = "0.3.4", default-features = false }

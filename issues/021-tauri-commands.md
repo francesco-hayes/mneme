@@ -28,6 +28,10 @@ Connect the UI to the real crates: every method in the API contract works in the
 - From 015: nobody has opened the real app window yet. Check the top bar against the native title bar, that `AccentColor` follows the system accent in WKWebView, and that styles load under `pnpm tauri dev` (Vite injects `<style>` tags; add a `devCsp` if they are blocked).
 - From 015: a stop that bypasses the UI's `useRecording().stop()` (menu bar, shortcut) skips the editor's before-stop flush. Emit an event the UI can flush on before the backend stops, or accept that the editor's autosave covers it, and say which.
 
+- From 010: starting two meetings in the same minute asks for the same folder name and `create_meeting` returns `FolderExists`. The scope doc assumed this cannot happen. Until Francesco decides (suffix or wait), surface the error readably.
+- From 010: store types do not derive `serde`; map them to the contract types in `src-tauri` (`id.as_str()`, `started_at.to_rfc3339()`, `duration_secs`, `status.as_str()`, `folder`).
+- From 002: the frame channel is `std::sync::mpsc`; `request_microphone_permission()` blocks until the user answers, so call it off the UI thread.
+
 ## Acceptance criteria
 
 - [ ] Tests with fake sources and a fake transcriber: start then stop produces a complete meeting on disk with transcript and duration; double start is refused; start with no model is refused with a clear message; notes saved during recording produce timeline entries; recovery runs on launch.
