@@ -37,6 +37,10 @@ pub enum Error {
     MeetingNotFound { id: MeetingId },
 
     /// A folder with the wanted name is already there. Nothing was changed.
+    ///
+    /// Returned when a title the user chose needs a folder name that is
+    /// taken. A new meeting does not fail this way on a taken name, it gets a
+    /// numbered one, unless every number up to 999 is taken as well.
     #[error("a folder named \"{}\" already exists", folder_name(path))]
     FolderExists { path: PathBuf },
 

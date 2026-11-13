@@ -735,6 +735,65 @@ fn appends_after_the_folder_was_renamed_land_in_the_renamed_folder() {
 }
 
 #[test]
+fn same_minute_meetings_keep_their_transcripts_apart_and_a_writer_follows_its_own() {
+    let (_dir, store) = store();
+    let first = create(&store);
+    let second = create(&store);
+    assert_eq!(
+        names_in(store.root()),
+        ["2026-10-27 1430 Meeting", "2026-10-27 1430 Meeting 2"]
+    );
+    let mut first_writer = store.transcript_writer(&first.id).unwrap();
+    let mut second_writer = store.transcript_writer(&second.id).unwrap();
+    assert_eq!(second_writer.path(), second.transcript_path());
+
+    first_writer
+        .append(&segment(Me, 1_000, "in the first"))
+        .unwrap();
+    second_writer
+        .append(&segment(Them, 2_000, "in the second"))
+        .unwrap();
+
+    assert_eq!(
+        text_of(&first.transcript_path()),
+        "[00:00:01] Me: in the first\n"
+    );
+    assert_eq!(
+        text_of(&second.transcript_path()),
+        "[00:00:02] Them: in the second\n"
+    );
+
+    // Stopped with its default title, the numbered folder stays and the
+    // writer has nothing to follow.
+    let first_done = store.finish_meeting(&first.id, 3).unwrap().meeting;
+    first_writer.finalize().unwrap();
+    assert_eq!(first_done.folder, first.folder);
+
+    // Given a title, the numbered folder moves at finish to the name
+    // without a number, and its writer follows it there.
+    store.rename_meeting(&second.id, "Standup").unwrap();
+    let second_done = store.finish_meeting(&second.id, 3).unwrap().meeting;
+    second_writer.append(&segment(Me, 500, "late")).unwrap();
+    second_writer.finalize().unwrap();
+
+    assert_eq!(
+        names_in(store.root()),
+        ["2026-10-27 1430 Meeting", "2026-10-27 1430 Standup"]
+    );
+    assert_eq!(second_writer.path(), second_done.transcript_path());
+    assert_eq!(
+        text_of(&second_done.transcript_path()),
+        "[00:00:00] Me: late\n[00:00:02] Them: in the second\n"
+    );
+    assert_eq!(
+        text_of(&first.transcript_path()),
+        "[00:00:01] Me: in the first\n"
+    );
+    assert_eq!(store.transcript(&first.id).unwrap().lines.len(), 1);
+    assert_eq!(store.transcript(&second.id).unwrap().lines.len(), 2);
+}
+
+#[test]
 fn a_folder_renamed_by_hand_during_recording_does_not_lose_lines() {
     let (_dir, store, meeting, mut writer) = recording();
     writer.append(&segment(Them, 20_000, "second")).unwrap();

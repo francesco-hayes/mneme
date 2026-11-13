@@ -3,6 +3,7 @@
 //! Start times are fixed values with explicit UTC offsets, so nothing here
 //! depends on the clock or on the `TZ` the tests run under.
 
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -284,24 +285,521 @@ fn every_meeting_gets_its_own_id() {
     assert_eq!(store.meeting(&b.id).unwrap().folder, b.folder);
 }
 
+// --- Two meetings in one minute --------------------------------------------
+
+const PLAIN: &str = "2026-10-27 1430 Meeting";
+
+/// The `n`th folder name for a meeting started at [`START`] that keeps its
+/// default title.
+fn numbered(n: usize) -> String {
+    if n == 1 {
+        PLAIN.to_owned()
+    } else {
+        format!("{PLAIN} {n}")
+    }
+}
+
+fn folder_name(meeting: &MeetingSummary) -> &str {
+    meeting.folder.file_name().unwrap().to_str().unwrap()
+}
+
+/// What a list of the root will be built from: the `(id, title)` in the
+/// frontmatter of every folder, read by a YAML parser, in folder order.
+fn ids_and_titles_on_disk(root: &Path) -> Vec<(String, String)> {
+    names_in(root)
+        .iter()
+        .map(|name| {
+            let text = fs::read_to_string(root.join(name).join("notes.md")).unwrap();
+            let yaml = frontmatter_yaml(&text);
+            (
+                yaml["id"].as_str().unwrap().to_owned(),
+                yaml["title"].as_str().unwrap().to_owned(),
+            )
+        })
+        .collect()
+}
+
 #[test]
-fn create_in_a_minute_that_already_has_a_folder_fails_and_touches_nothing() {
+fn creates_in_the_same_minute_get_numbered_folders() {
     let (_dir, store) = store();
     let first = create(&store);
     fs::write(first.transcript_path(), "[00:00:01] Me: hello\n").unwrap();
+    let first_before = snapshot(&first.folder);
+
+    // Seconds differ, the minute does not.
+    let second = store
+        .create_meeting(at("2026-10-27T14:30:20+01:00"))
+        .unwrap();
+    let third = store
+        .create_meeting(at("2026-10-27T14:30:59+01:00"))
+        .unwrap();
+
+    assert_eq!(folder_name(&first), "2026-10-27 1430 Meeting");
+    assert_eq!(folder_name(&second), "2026-10-27 1430 Meeting 2");
+    assert_eq!(folder_name(&third), "2026-10-27 1430 Meeting 3");
+    assert_eq!(
+        names_in(store.root()),
+        [
+            "2026-10-27 1430 Meeting",
+            "2026-10-27 1430 Meeting 2",
+            "2026-10-27 1430 Meeting 3"
+        ]
+    );
+    for meeting in [&second, &third] {
+        assert_eq!(meeting.folder.parent().unwrap(), store.root());
+        assert_eq!(
+            names_in(&meeting.folder),
+            ["notes-timeline.jsonl", "notes.md", "transcript.md"]
+        );
+        assert_eq!(fs::read(meeting.transcript_path()).unwrap(), b"");
+        assert_eq!(fs::read(meeting.timeline_path()).unwrap(), b"");
+    }
+    // The first meeting's folder was not touched by the later creates.
+    assert_eq!(snapshot(&first.folder), first_before);
+}
+
+#[test]
+fn same_minute_meetings_are_separate_meetings_with_the_same_title() {
+    let (_dir, store) = store();
+
+    let first = create(&store);
+    let second = create(&store);
+    let third = create(&store);
+
+    // Three ids.
+    assert_ne!(first.id, second.id);
+    assert_ne!(first.id, third.id);
+    assert_ne!(second.id, third.id);
+
+    // The number is in the folder name and nowhere else: apart from the id,
+    // the three notes files are the same, byte for byte.
+    for meeting in [&first, &second, &third] {
+        assert_eq!(meeting.title, "Meeting, Oct 27 2:30 PM");
+        assert!(!meeting.title_edited);
+        assert_eq!(
+            notes(meeting),
+            format!(
+                "---\n\
+                 id: {}\n\
+                 title: Meeting, Oct 27 2:30 PM\n\
+                 title_edited: false\n\
+                 date: \"2026-10-27T14:30:00+01:00\"\n\
+                 duration:\n\
+                 status: recording\n\
+                 model: large-v3-turbo\n\
+                 language: auto\n\
+                 ---\n",
+                meeting.id
+            )
+        );
+        // Each id leads to its own folder, and reads back as created.
+        assert_eq!(store.meeting(&meeting.id).unwrap(), *meeting);
+        // The title asks for the plain name, and the folder is fine as it
+        // is: nothing is waiting to rename it.
+        assert_eq!(meeting.expected_folder_name(), PLAIN);
+        assert_eq!(meeting.pending_folder_name(), None);
+    }
+
+    // Scanning the root, as a list does, finds three meetings that differ
+    // only by id.
+    let same_title = |id: &MeetingId| (id.to_string(), "Meeting, Oct 27 2:30 PM".to_owned());
+    assert_eq!(
+        ids_and_titles_on_disk(store.root()),
+        [
+            same_title(&first.id),
+            same_title(&second.id),
+            same_title(&third.id)
+        ]
+    );
+}
+
+#[test]
+fn a_new_meeting_takes_the_lowest_free_number() {
+    let (_dir, store) = store();
+    let first = create(&store);
+    let second = create(&store);
+    let third = create(&store);
+    assert_eq!(folder_name(&third), numbered(3));
+
+    // `Meeting` and `Meeting 3` are there, `Meeting 2` is not: the gap is
+    // filled.
+    fs::remove_dir_all(&second.folder).unwrap();
+    let fourth = create(&store);
+    assert_eq!(folder_name(&fourth), numbered(2));
+
+    // No gap left: the next one goes after the highest.
+    let fifth = create(&store);
+    assert_eq!(folder_name(&fifth), numbered(4));
+
+    // The plain name is a gap like any other.
+    fs::remove_dir_all(&first.folder).unwrap();
+    let sixth = create(&store);
+    assert_eq!(folder_name(&sixth), numbered(1));
+
+    assert_eq!(
+        names_in(store.root()),
+        [numbered(1), numbered(2), numbered(3), numbered(4)]
+    );
+    // Whoever had a name keeps it.
+    for meeting in [&third, &fourth, &fifth, &sixth] {
+        assert_eq!(store.meeting(&meeting.id).unwrap(), *meeting);
+    }
+}
+
+#[test]
+fn names_taken_by_things_that_are_not_meetings_are_skipped_and_left_alone() {
+    let (_dir, store) = store();
+    // A plain file, a folder with someone's file in it, and a link that
+    // points nowhere.
+    fs::write(store.root().join(numbered(1)), "a file").unwrap();
+    fs::create_dir(store.root().join(numbered(2))).unwrap();
+    fs::write(store.root().join(numbered(2)).join("keep.txt"), "mine").unwrap();
+    #[cfg(unix)]
+    std::os::unix::fs::symlink("nowhere", store.root().join(numbered(3))).unwrap();
+    #[cfg(not(unix))]
+    fs::create_dir(store.root().join(numbered(3))).unwrap();
+
+    let meeting = create(&store);
+
+    assert_eq!(folder_name(&meeting), numbered(4));
+    assert_eq!(
+        names_in(store.root()),
+        [numbered(1), numbered(2), numbered(3), numbered(4)]
+    );
+    assert_eq!(
+        fs::read_to_string(store.root().join(numbered(1))).unwrap(),
+        "a file"
+    );
+    assert_eq!(names_in(&store.root().join(numbered(2))), ["keep.txt"]);
+    assert_eq!(
+        fs::read_to_string(store.root().join(numbered(2)).join("keep.txt")).unwrap(),
+        "mine"
+    );
+    #[cfg(unix)]
+    assert_eq!(
+        fs::read_link(store.root().join(numbered(3))).unwrap(),
+        Path::new("nowhere")
+    );
+    assert_eq!(store.meeting(&meeting.id).unwrap(), meeting);
+}
+
+#[test]
+fn a_name_taken_in_other_capitals_counts_as_taken_where_the_disk_says_so() {
+    let (_dir, store) = store();
+    let shouting = store.root().join("2026-10-27 1430 MEETING");
+    fs::create_dir(&shouting).unwrap();
+    // On a disk that ignores case the plain name is now taken; on one that
+    // does not, it is free.
+    let ignores_case = store.root().join(PLAIN).exists();
+
+    let meeting = create(&store);
+
+    // Either way the meeting has a folder of its own.
+    let expected = if ignores_case {
+        numbered(2)
+    } else {
+        numbered(1)
+    };
+    assert_eq!(folder_name(&meeting), expected);
+    assert_eq!(names_in(store.root()).len(), 2);
+    assert!(names_in(&shouting).is_empty());
+    assert_eq!(names_in(&meeting.folder).len(), 3);
+}
+
+#[test]
+fn finish_leaves_a_numbered_folder_where_it_is() {
+    let (_dir, store) = store();
+    let first = create(&store);
+    let second = create(&store);
+    assert_eq!(folder_name(&second), numbered(2));
+    let created = notes(&second);
+
+    let finished = store.finish_meeting(&second.id, 75).unwrap();
+
+    assert!(finished.rename_error.is_none());
+    let done = finished.meeting;
+    assert_eq!(done.folder, second.folder);
+    assert_eq!(done.title, "Meeting, Oct 27 2:30 PM");
+    assert!(!done.title_edited);
+    assert_eq!(done.status, MeetingStatus::Complete);
+    assert_eq!(done.pending_folder_name(), None);
+    assert_eq!(
+        notes(&done),
+        created
+            .replace("duration:\n", "duration: 75\n")
+            .replace("status: recording\n", "status: complete\n")
+    );
+    assert_eq!(names_in(store.root()), [numbered(1), numbered(2)]);
+    assert_eq!(store.meeting(&second.id).unwrap(), done);
+
+    // Not even when the plain name is free by the time the meeting stops:
+    // the number is never "corrected" away.
+    let third = create(&store);
+    assert_eq!(folder_name(&third), numbered(3));
+    fs::remove_dir_all(&first.folder).unwrap();
+
+    let finished = store.finish_meeting(&third.id, 5).unwrap();
+
+    assert!(finished.rename_error.is_none());
+    assert_eq!(finished.meeting.folder, third.folder);
+    assert_eq!(names_in(store.root()), [numbered(2), numbered(3)]);
+    assert_eq!(store.meeting(&second.id).unwrap().folder, second.folder);
+}
+
+#[test]
+fn editing_the_title_moves_a_numbered_folder_to_the_name_without_a_number() {
+    let (_dir, store) = store();
+    let first = create(&store);
+    let second = create(&store);
+    let third = create(&store);
+    fs::write(second.transcript_path(), "[00:00:01] Me: hello\n").unwrap();
+
+    // After completion: moved by the rename itself.
+    store.finish_meeting(&second.id, 60).unwrap();
+    let renamed = store.rename_meeting(&second.id, "Standup").unwrap();
+
+    assert_eq!(folder_name(&renamed), "2026-10-27 1430 Standup");
+    assert_eq!(renamed.id, second.id);
+    assert_eq!(renamed.title, "Standup");
+    assert!(renamed.title_edited);
+    assert_eq!(renamed.pending_folder_name(), None);
+    assert_eq!(
+        fs::read_to_string(renamed.transcript_path()).unwrap(),
+        "[00:00:01] Me: hello\n"
+    );
+    assert_eq!(
+        names_in(store.root()),
+        [
+            numbered(1),
+            numbered(3),
+            "2026-10-27 1430 Standup".to_owned()
+        ]
+    );
+    assert_eq!(store.meeting(&second.id).unwrap(), renamed);
+
+    // During recording: the title is saved, the numbered folder waits, and
+    // finish moves it to the name without a number.
+    let retitled = store.rename_meeting(&third.id, "Design review").unwrap();
+    assert_eq!(retitled.folder, third.folder);
+    assert_eq!(
+        retitled.pending_folder_name().as_deref(),
+        Some("2026-10-27 1430 Design review")
+    );
+    let finished = store.finish_meeting(&third.id, 30).unwrap();
+    assert!(finished.rename_error.is_none());
+    assert_eq!(
+        folder_name(&finished.meeting),
+        "2026-10-27 1430 Design review"
+    );
+    assert_eq!(finished.meeting.id, third.id);
+
+    // The untouched first meeting is where it was.
+    assert_eq!(store.meeting(&first.id).unwrap(), first);
+    assert_eq!(
+        names_in(store.root()),
+        [
+            "2026-10-27 1430 Design review",
+            "2026-10-27 1430 Meeting",
+            "2026-10-27 1430 Standup"
+        ]
+    );
+}
+
+#[test]
+fn a_title_whose_folder_name_is_taken_is_still_refused_not_numbered() {
+    let (_dir, store) = store();
+    let first = create(&store);
+    let second = create(&store);
+    store.finish_meeting(&first.id, 60).unwrap();
+    store.rename_meeting(&first.id, "Standup").unwrap();
+    let third = create(&store);
+    assert_eq!(folder_name(&third), numbered(1));
     let before = snapshot(store.root());
+    let taken = |name: &str| store.root().join(name);
+
+    // The second meeting cannot take the first one's title, while recording
+    // or after: no `Standup 2` is made for a name the user chose.
+    for round in 0..2 {
+        let err = store.rename_meeting(&second.id, "Standup").unwrap_err();
+        assert!(
+            matches!(&err, Error::FolderExists { path } if *path == taken("2026-10-27 1430 Standup")),
+            "{err:?}"
+        );
+        assert_eq!(
+            err.to_string(),
+            "a folder named \"2026-10-27 1430 Standup\" already exists"
+        );
+        // Nor can it be titled "Meeting", or a title that falls back to
+        // `Meeting`, while another folder has the plain name.
+        for title in ["Meeting", "???"] {
+            let err = store.rename_meeting(&second.id, title).unwrap_err();
+            assert!(
+                matches!(&err, Error::FolderExists { path } if *path == taken(PLAIN)),
+                "{title:?}: {err:?}"
+            );
+        }
+        // And a title that spells out another meeting's numbered folder
+        // name is refused the same way.
+        let err = store.rename_meeting(&third.id, "Meeting 2").unwrap_err();
+        assert!(
+            matches!(&err, Error::FolderExists { path } if *path == taken(&numbered(2))),
+            "{err:?}"
+        );
+
+        if round == 0 {
+            // Nothing changed, in any folder or file.
+            assert_eq!(snapshot(store.root()), before);
+            let after = store.meeting(&second.id).unwrap();
+            assert_eq!(after, second);
+            assert_eq!(folder_name(&after), numbered(2));
+            store.finish_meeting(&second.id, 5).unwrap();
+        }
+    }
+
+    let after = store.meeting(&second.id).unwrap();
+    assert_eq!(after.title, "Meeting, Oct 27 2:30 PM");
+    assert!(!after.title_edited);
+    assert_eq!(folder_name(&after), numbered(2));
+    assert_eq!(
+        names_in(store.root()),
+        [
+            numbered(1),
+            numbered(2),
+            "2026-10-27 1430 Standup".to_owned()
+        ]
+    );
+
+    // A free title still works, and moves the folder to it without a number.
+    let renamed = store.rename_meeting(&second.id, "Retro").unwrap();
+    assert_eq!(folder_name(&renamed), "2026-10-27 1430 Retro");
+}
+
+#[test]
+fn a_title_that_ends_in_a_number_is_kept_whole() {
+    let (_dir, store) = store();
+    let meeting = create(&store);
+
+    // Typed during recording, applied at finish.
+    store.rename_meeting(&meeting.id, "Sprint 2").unwrap();
+    let done = store.finish_meeting(&meeting.id, 60).unwrap().meeting;
+    assert_eq!(folder_name(&done), "2026-10-27 1430 Sprint 2");
+    assert_eq!(done.title, "Sprint 2");
+    assert_eq!(done.pending_folder_name(), None);
+
+    // Saving the same title again changes nothing: the `2` is not taken for
+    // a number Mneme added.
+    let before = snapshot(store.root());
+    assert_eq!(store.rename_meeting(&meeting.id, "Sprint 2").unwrap(), done);
+    assert_eq!(snapshot(store.root()), before);
+
+    // A new meeting in that minute is not confused by it either.
+    let other = create(&store);
+    assert_eq!(folder_name(&other), numbered(1));
+    assert_eq!(store.meeting(&meeting.id).unwrap(), done);
+
+    // Dropping the number from the title drops it from the folder, and
+    // putting another one in puts it there.
+    let renamed = store.rename_meeting(&meeting.id, "Sprint").unwrap();
+    assert_eq!(folder_name(&renamed), "2026-10-27 1430 Sprint");
+    let renamed = store.rename_meeting(&meeting.id, "Sprint 3").unwrap();
+    assert_eq!(folder_name(&renamed), "2026-10-27 1430 Sprint 3");
+    assert_eq!(
+        names_in(store.root()),
+        [numbered(1), "2026-10-27 1430 Sprint 3".to_owned()]
+    );
+}
+
+#[test]
+fn a_meeting_titled_like_a_numbered_default_is_treated_as_titled() {
+    let (_dir, store) = store();
+    // The user really did call it "Meeting 2".
+    let titled = create(&store);
+    store.finish_meeting(&titled.id, 60).unwrap();
+    let titled = store.rename_meeting(&titled.id, "Meeting 2").unwrap();
+    assert_eq!(folder_name(&titled), numbered(2));
+    assert_eq!(names_in(store.root()), [numbered(2)]);
+
+    // New meetings in that minute go around the name it holds.
+    let a = create(&store);
+    let b = create(&store);
+    assert_eq!(folder_name(&a), numbered(1));
+    assert_eq!(folder_name(&b), numbered(3));
+
+    // It is still the titled meeting: same id, title and folder.
+    let read = store.meeting(&titled.id).unwrap();
+    assert_eq!(read, titled);
+    assert_eq!(read.title, "Meeting 2");
+    assert!(read.title_edited);
+
+    // Unlike a numbered default folder, it follows its title: a new title
+    // moves it, and the name it leaves is free for the next new meeting.
+    let renamed = store
+        .rename_meeting(&titled.id, "Meeting 2 (final)")
+        .unwrap();
+    assert_eq!(folder_name(&renamed), "2026-10-27 1430 Meeting 2 (final)");
+    let c = create(&store);
+    assert_eq!(folder_name(&c), numbered(2));
+
+    // And the default-titled ones do not follow anything: plain or
+    // numbered, they stay where they are through finish.
+    for meeting in [&a, &b, &c] {
+        let done = store.finish_meeting(&meeting.id, 1).unwrap();
+        assert!(done.rename_error.is_none());
+        assert_eq!(done.meeting.folder, meeting.folder);
+    }
+    assert_eq!(
+        names_in(store.root()),
+        [
+            numbered(1),
+            "2026-10-27 1430 Meeting 2".to_owned(),
+            "2026-10-27 1430 Meeting 2 (final)".to_owned(),
+            numbered(3)
+        ]
+    );
+}
+
+#[test]
+fn create_gives_up_cleanly_when_every_number_is_taken() {
+    const HIGHEST: usize = 999;
+    let (_dir, store) = store();
+    for n in 1..=HIGHEST {
+        fs::create_dir(store.root().join(numbered(n))).unwrap();
+    }
 
     let err = store.create_meeting(at(START)).unwrap_err();
 
     assert!(
-        matches!(&err, Error::FolderExists { path } if *path == first.folder),
+        matches!(&err, Error::FolderExists { path } if *path == store.root().join(PLAIN)),
         "{err:?}"
     );
     assert_eq!(
         err.to_string(),
         "a folder named \"2026-10-27 1430 Meeting\" already exists"
     );
-    assert_eq!(snapshot(store.root()), before);
+    // Nothing was created: no folder past the highest number, and nothing
+    // inside the ones that are there.
+    let names = names_in(store.root());
+    assert_eq!(names.len(), HIGHEST);
+    assert!(!store.root().join(numbered(HIGHEST + 1)).exists());
+    for name in &names {
+        assert!(names_in(&store.root().join(name)).is_empty(), "{name}");
+    }
+
+    // Another minute is not affected.
+    let other = store
+        .create_meeting(at("2026-10-27T14:31:00+01:00"))
+        .unwrap();
+    assert_eq!(folder_name(&other), "2026-10-27 1431 Meeting");
+
+    // One free name anywhere in the range is found, the highest included.
+    fs::remove_dir(store.root().join(numbered(HIGHEST))).unwrap();
+    let last = create(&store);
+    assert_eq!(folder_name(&last), numbered(HIGHEST));
+    assert_eq!(store.meeting(&last.id).unwrap(), last);
+    assert!(matches!(
+        store.create_meeting(at(START)),
+        Err(Error::FolderExists { .. })
+    ));
 }
 
 // --- Looking up ----------------------------------------------------------
@@ -996,25 +1494,91 @@ fn concurrent_renames_and_reads_never_corrupt_the_meeting() {
 }
 
 #[test]
-fn two_creates_in_the_same_minute_from_two_threads_give_one_meeting() {
+fn concurrent_creates_in_the_same_minute_all_succeed_in_folders_of_their_own() {
+    const THREADS: usize = 8;
+    const PER_THREAD: usize = 3;
     let (_dir, store) = store();
 
-    let results: Vec<_> = std::thread::scope(|scope| {
-        let handles: Vec<_> = (0..2)
-            .map(|_| scope.spawn(|| store.create_meeting(at(START))))
+    let created: Vec<MeetingSummary> = std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..THREADS)
+            .map(|_| {
+                scope.spawn(|| {
+                    (0..PER_THREAD)
+                        .map(|_| store.create_meeting(at(START)).unwrap())
+                        .collect::<Vec<_>>()
+                })
+            })
             .collect();
         handles
             .into_iter()
-            .map(|handle| handle.join().unwrap())
+            .flat_map(|handle| handle.join().unwrap())
             .collect()
     });
 
-    let created: Vec<_> = results.iter().filter(|result| result.is_ok()).collect();
-    assert_eq!(created.len(), 1);
-    assert!(
-        results
+    assert_same_minute_meetings_are_whole_and_distinct(&store, &created, THREADS * PER_THREAD);
+}
+
+#[test]
+fn concurrent_creates_through_separate_stores_on_one_root_never_share_a_folder() {
+    // Separate stores do not share a lock, as two processes would not. All
+    // that keeps their creates apart is that a folder name is claimed by
+    // creating it, so this fails if create ever checks first and creates
+    // second.
+    const STORES: usize = 6;
+    const PER_STORE: usize = 4;
+    let (_dir, first) = store();
+    let stores: Vec<Store> = (0..STORES)
+        .map(|_| Store::open(first.root()).unwrap())
+        .collect();
+
+    let created: Vec<MeetingSummary> = std::thread::scope(|scope| {
+        let handles: Vec<_> = stores
             .iter()
-            .any(|result| matches!(result, Err(Error::FolderExists { .. })))
-    );
-    assert_eq!(names_in(store.root()), ["2026-10-27 1430 Meeting"]);
+            .map(|store| {
+                scope.spawn(move || {
+                    (0..PER_STORE)
+                        .map(|_| store.create_meeting(at(START)).unwrap())
+                        .collect::<Vec<_>>()
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .flat_map(|handle| handle.join().unwrap())
+            .collect()
+    });
+
+    assert_same_minute_meetings_are_whole_and_distinct(&first, &created, STORES * PER_STORE);
+}
+
+/// `created` are `count` meetings made in the minute of [`START`] in an
+/// otherwise empty root: every one has its own folder and id, the folders
+/// are exactly `Meeting`, `Meeting 2` … `Meeting <count>`, and each folder
+/// holds the files of the one meeting that was returned for it.
+fn assert_same_minute_meetings_are_whole_and_distinct(
+    store: &Store,
+    created: &[MeetingSummary],
+    count: usize,
+) {
+    assert_eq!(created.len(), count);
+
+    let ids: BTreeSet<&MeetingId> = created.iter().map(|meeting| &meeting.id).collect();
+    assert_eq!(ids.len(), count, "ids differ");
+    let folders: BTreeSet<&PathBuf> = created.iter().map(|meeting| &meeting.folder).collect();
+    assert_eq!(folders.len(), count, "folders differ");
+
+    let mut expected: Vec<String> = (1..=count).map(numbered).collect();
+    expected.sort();
+    assert_eq!(names_in(store.root()), expected);
+
+    for meeting in created {
+        assert_eq!(meeting.title, "Meeting, Oct 27 2:30 PM");
+        assert_eq!(
+            names_in(&meeting.folder),
+            ["notes-timeline.jsonl", "notes.md", "transcript.md"]
+        );
+        // The folder holds this meeting's id and nobody else's.
+        assert!(notes(meeting).contains(&format!("\nid: {}\n", meeting.id)));
+        assert_eq!(store.meeting(&meeting.id).unwrap(), *meeting);
+    }
 }

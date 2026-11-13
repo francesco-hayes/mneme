@@ -115,8 +115,9 @@ pub struct MeetingSummary {
     pub id: MeetingId,
     /// Display title, for example `Meeting, Oct 27 2:30 PM` or `Standup`.
     pub title: String,
-    /// False until the user changes the title. While false the folder uses
-    /// `Meeting` as its title part.
+    /// False until the user changes the title. While false the folder keeps
+    /// the name it was created with: `Meeting` as its title part, followed by
+    /// a number if that name was taken.
     pub title_edited: bool,
     /// Start time with its UTC offset: the `date` key.
     pub started_at: StartTime,
@@ -147,19 +148,48 @@ impl MeetingSummary {
         self.folder.join(TIMELINE_FILE)
     }
 
-    /// The folder name this meeting should have: `YYYY-MM-DD HHMM Title`
+    /// The folder name this meeting's title asks for: `YYYY-MM-DD HHMM Title`
     /// from the start time's own wall clock, with `Meeting` as the title
-    /// part until the title is edited.
+    /// part until the title is edited. It never carries a number.
     ///
     /// It differs from the actual name of [`folder`](Self::folder) while a
-    /// rename is waiting for the recording to stop, or after the folder was
-    /// renamed by hand.
+    /// rename is waiting for the recording to stop, after the folder was
+    /// renamed by hand, and for a meeting that was created as
+    /// `… Meeting 2` because the plain name was taken. Only the first of
+    /// those means the folder should move, so do not compare the two names
+    /// to decide that; ask [`pending_folder_name`](Self::pending_folder_name).
     pub fn expected_folder_name(&self) -> String {
         if self.title_edited {
             folder_name(&self.started_at, &sanitize_title(&self.title))
         } else {
             folder_name(&self.started_at, DEFAULT_FOLDER_TITLE)
         }
+    }
+
+    /// The name this meeting's folder should be moved to, or `None` if the
+    /// folder is fine where it is.
+    ///
+    /// This is the one place that decides whether a folder name is
+    /// acceptable for its meeting. Rename, finish and recovery all go by it.
+    ///
+    /// - Title never edited: always `None`. The folder keeps the name it has,
+    ///   whether that is the plain `… Meeting`, the `… Meeting 2` it was
+    ///   created with in a minute that already had a meeting, or a name
+    ///   someone gave it by hand. The folder name is not read to tell these
+    ///   apart; none of them is ever "corrected".
+    /// - Title edited: `None` when the folder already has exactly
+    ///   [`expected_folder_name`](Self::expected_folder_name), otherwise that
+    ///   name. An edited title always asks for the name without a number.
+    ///
+    /// `Some` does not mean the move can happen now: it waits while the
+    /// meeting is recording, and fails if the name is taken.
+    pub fn pending_folder_name(&self) -> Option<String> {
+        if !self.title_edited {
+            return None;
+        }
+        let expected = self.expected_folder_name();
+        let current = self.folder.file_name().and_then(|name| name.to_str());
+        (current != Some(expected.as_str())).then_some(expected)
     }
 
     /// Reads the meeting keys out of parsed frontmatter.
@@ -519,6 +549,75 @@ mod tests {
         assert_eq!(
             summary.expected_folder_name(),
             "2026-10-27 1430 Q3 Q4 review"
+        );
+    }
+
+    #[test]
+    fn a_folder_only_has_a_pending_name_when_an_edited_title_asks_for_another() {
+        let mut summary = summary_of(MINIMAL).unwrap();
+
+        // Title never edited: any folder name is left alone.
+        for name in [
+            "2026-10-27 1430 Meeting",
+            "2026-10-27 1430 Meeting 2",
+            "2026-10-27 1430 Meeting 999",
+            "2026-10-27 1430 Meeting (important)",
+            "Renamed in Finder",
+        ] {
+            summary.folder = Path::new("/root").join(name);
+            assert_eq!(summary.pending_folder_name(), None, "{name}");
+        }
+
+        // Title edited: only the exact name will do, and it has no number.
+        summary.title_edited = true;
+        summary.title = "Standup".to_owned();
+        for name in [
+            "2026-10-27 1430 Meeting",
+            "2026-10-27 1430 Meeting 2",
+            "2026-10-27 1430 Standup 2",
+            "2026-10-27 1430 standup",
+            "Renamed in Finder",
+        ] {
+            summary.folder = Path::new("/root").join(name);
+            assert_eq!(
+                summary.pending_folder_name().as_deref(),
+                Some("2026-10-27 1430 Standup"),
+                "{name}"
+            );
+        }
+        summary.folder = PathBuf::from("/root/2026-10-27 1430 Standup");
+        assert_eq!(summary.pending_folder_name(), None);
+    }
+
+    #[test]
+    fn a_title_that_ends_in_a_number_is_a_title_not_a_numbered_default() {
+        let mut summary = summary_of(MINIMAL).unwrap();
+        summary.title_edited = true;
+
+        for (title, name) in [
+            ("Sprint 2", "2026-10-27 1430 Sprint 2"),
+            ("Meeting 2", "2026-10-27 1430 Meeting 2"),
+            ("2", "2026-10-27 1430 2"),
+        ] {
+            summary.title = title.to_owned();
+            assert_eq!(summary.expected_folder_name(), name);
+
+            // In its own folder it stays; the number is not stripped.
+            summary.folder = Path::new("/root").join(name);
+            assert_eq!(summary.pending_folder_name(), None, "{title}");
+
+            // In the default folder it asks for the whole title.
+            summary.folder = PathBuf::from("/root/2026-10-27 1430 Meeting");
+            assert_eq!(summary.pending_folder_name().as_deref(), Some(name));
+        }
+
+        // A meeting titled "Meeting" sitting in a numbered default folder
+        // asks for the plain name: an edited title never keeps the number.
+        summary.title = "Meeting".to_owned();
+        summary.folder = PathBuf::from("/root/2026-10-27 1430 Meeting 2");
+        assert_eq!(
+            summary.pending_folder_name().as_deref(),
+            Some("2026-10-27 1430 Meeting")
         );
     }
 

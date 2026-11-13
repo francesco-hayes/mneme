@@ -50,6 +50,34 @@ pub(crate) fn folder_name(start: &StartTime, title_part: &str) -> String {
     format!("{} {}", start.folder_prefix(), title_part)
 }
 
+/// The highest number a new meeting's folder name can end in.
+///
+/// A new meeting whose folder name is taken tries the same name with ` 2`,
+/// then ` 3`, up to this number, and then gives up. Nobody starts a thousand
+/// meetings in one minute; the bound is there so that a root full of such
+/// folders, however it came to be, costs a bounded number of attempts.
+pub(crate) const MAX_FOLDER_NUMBER: u32 = 999;
+
+/// The `number`th name a new meeting tries for its folder: `name` itself for
+/// 1, then `name 2`, `name 3` and so on.
+///
+/// The number goes after the whole name and is not counted in the title
+/// part's length cap: it is never cut, and the title part is never shortened
+/// to make room. The cap leaves that room. A date prefix (16 bytes with its
+/// space), the longest title part (200 bytes) and ` 999` come to 220 bytes of
+/// the 255 a file name holds.
+///
+/// Only [`Store::create_meeting`](crate::Store::create_meeting) adds a
+/// number, and nothing ever reads one back out of a folder name, so a title
+/// that ends in a number of its own (`Sprint 2`) is only ever a title.
+pub(crate) fn numbered_folder_name(name: &str, number: u32) -> String {
+    if number <= 1 {
+        name.to_owned()
+    } else {
+        format!("{name} {number}")
+    }
+}
+
 /// Drops control and direction characters and collapses whitespace runs to
 /// one space, trimming both ends. With `for_file_name`, characters unsafe in
 /// file names count as whitespace.
@@ -232,6 +260,48 @@ mod tests {
         assert_eq!(normalize_title("bell\u{7}\u{202E}"), "bell");
         assert_eq!(normalize_title("...env"), "...env");
         assert_eq!(normalize_title(" \n\t "), "");
+    }
+
+    #[test]
+    fn the_first_numbered_name_is_the_plain_one_and_the_rest_count_from_two() {
+        let name = "2026-10-27 1430 Meeting";
+        assert_eq!(numbered_folder_name(name, 1), name);
+        assert_eq!(numbered_folder_name(name, 2), "2026-10-27 1430 Meeting 2");
+        assert_eq!(numbered_folder_name(name, 3), "2026-10-27 1430 Meeting 3");
+        assert_eq!(
+            numbered_folder_name(name, MAX_FOLDER_NUMBER),
+            "2026-10-27 1430 Meeting 999"
+        );
+        // The number goes after whatever the name ends in, digits included.
+        assert_eq!(
+            numbered_folder_name("2026-10-27 1430 Sprint 2", 2),
+            "2026-10-27 1430 Sprint 2 2"
+        );
+    }
+
+    #[test]
+    fn the_longest_title_with_the_highest_number_is_still_a_valid_file_name() {
+        let start: StartTime = "2026-10-27T09:30:00+01:00".parse().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+
+        for title in ["a".repeat(500), "🚀".repeat(500), "設".repeat(500)] {
+            let title_part = sanitize_title(&title);
+            let plain = folder_name(&start, &title_part);
+            let name = numbered_folder_name(&plain, MAX_FOLDER_NUMBER);
+
+            // The title part is whole: the number was added, nothing was cut.
+            assert_eq!(name, format!("2026-10-27 0930 {title_part} 999"));
+            assert!(name.len() <= 255, "{} bytes", name.len());
+            // And the file system agrees.
+            std::fs::create_dir(dir.path().join(&name)).unwrap();
+        }
+
+        // The worst case in bytes: a title part at the byte cap.
+        let widest = folder_name(&start, &sanitize_title(&"🚀".repeat(500)));
+        assert_eq!(
+            numbered_folder_name(&widest, MAX_FOLDER_NUMBER).len(),
+            16 + MAX_TITLE_BYTES + 4
+        );
     }
 
     #[test]

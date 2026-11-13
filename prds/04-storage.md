@@ -39,7 +39,7 @@ Meetings must be plain files the user owns, readable in any editor, and safe aga
 - Characters that are unsafe in file names are removed from the title part; an empty result falls back to `Meeting`.
 - The folder is renamed when the title changes, but never while recording. A rename requested during recording is applied at stop.
 - If the target name already exists, the rename fails with a clear error and nothing changes.
-- A new meeting whose folder name is taken (a second meeting started in the same minute) gets a numeric suffix: `2026-10-27 1430 Meeting 2`. Creating a meeting never fails on a name clash. The suffix is part of the folder name only, not the title.
+- A new meeting whose folder name is taken (a second meeting started in the same minute) gets a numeric suffix: `2026-10-27 1430 Meeting 2`. The lowest free number is used, up to 999; creating a meeting does not fail on a name clash short of that bound. The suffix is part of the folder name only, not the title.
 
 ### Frontmatter (`notes.md`)
 

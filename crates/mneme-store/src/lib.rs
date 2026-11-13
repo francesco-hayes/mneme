@@ -9,7 +9,8 @@
 //!     notes.md               frontmatter + the user's notes
 //!     transcript.md          [00:01:23] Them: ...
 //!     notes-timeline.jsonl   {"t":"00:04:12","text":"- ask Ana about the API"}
-//!   2026-10-27 1430 Meeting/  default title kept
+//!   2026-10-27 1430 Meeting/    default title kept
+//!   2026-10-27 1430 Meeting 2/  another meeting started in the same minute
 //! ```
 //!
 //! The folders are the source of truth. A meeting's identity is the `id` in

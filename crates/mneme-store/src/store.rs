@@ -11,7 +11,7 @@ use crate::meeting::{
     KEY_DURATION, KEY_ID, KEY_STATUS, KEY_TITLE, KEY_TITLE_EDITED, MeetingId, MeetingStatus,
     MeetingSummary, NOTES_FILE, format_bool, format_duration,
 };
-use crate::naming::normalize_title;
+use crate::naming::{MAX_FOLDER_NUMBER, normalize_title, numbered_folder_name};
 use crate::safe_write::{safe_write, sync_dir};
 use crate::time::StartTime;
 
@@ -83,10 +83,22 @@ impl Store {
     /// meeting starts with a fresh id, the default display title, and status
     /// `recording`.
     ///
-    /// Fails with [`Error::FolderExists`] if a folder with that name is
-    /// already there (a second meeting started in the same minute); the
-    /// existing folder is not touched.
+    /// If that folder name is taken, as it is for a second meeting started
+    /// in the same minute, the new folder is `YYYY-MM-DD HHMM Meeting 2`,
+    /// or the lowest number from 2 up whose name is free. Whatever has the
+    /// taken names is not touched. The number is part of the folder name
+    /// only: the title and every other frontmatter value are the same as
+    /// for the plain name, and no later call removes the number unless the
+    /// title is edited.
+    ///
+    /// Fails with [`Error::FolderExists`] only if the plain name and every
+    /// numbered one up to 999 are taken; nothing is created then.
     pub fn create_meeting(&self, new: NewMeeting) -> Result<MeetingSummary> {
+        // Creates on this store run one at a time. Claiming a folder name is
+        // atomic without the lock; what the lock adds is that no rename on
+        // this store can run while the new folder is still empty. A folder
+        // rename replaces an empty folder that has its target name, and the
+        // cleanup below would then delete the meeting that was moved there.
         let _guard = self.lock();
 
         let mut summary = MeetingSummary {
@@ -100,17 +112,7 @@ impl Store {
             language: new.language.filter(|language| !language.is_empty()),
             folder: PathBuf::new(),
         };
-        summary.folder = self.root.join(summary.expected_folder_name());
-
-        match fs::create_dir(&summary.folder) {
-            Ok(()) => {}
-            Err(err) if err.kind() == io::ErrorKind::AlreadyExists => {
-                return Err(Error::FolderExists {
-                    path: summary.folder,
-                });
-            }
-            Err(err) => return Err(Error::io(&summary.folder, err)),
-        }
+        summary.folder = create_free_folder(&self.root, &summary.expected_folder_name())?;
 
         if let Err(err) = write_new_meeting_files(&summary) {
             // The folder was created just above and holds nothing but what
@@ -320,6 +322,35 @@ fn folder_has_id(folder: &Path, id: &MeetingId) -> bool {
     matches!(doc.get(KEY_ID), Ok(Some(found)) if found.text == id.as_str())
 }
 
+/// Creates an empty folder under `root` for a new meeting and returns its
+/// path: `name` if that is free, otherwise `name 2`, `name 3` and so on, the
+/// lowest number whose name is free.
+///
+/// There is no "is it free" check to race with. Each name is claimed by
+/// creating the folder, which the file system refuses if anything (a folder,
+/// a file, a link) already has the name, and a refusal moves on to the next
+/// number. So two creates can never end up in one folder, whether they come
+/// from this store, another `Store` on the same root or another program, and
+/// a folder that appears from outside at the wrong moment only costs one more
+/// attempt.
+///
+/// A gap is filled: with `name` and `name 3` there, the result is `name 2`.
+/// Gives up with [`Error::FolderExists`] for the plain name once every name
+/// up to [`MAX_FOLDER_NUMBER`] has been refused.
+fn create_free_folder(root: &Path, name: &str) -> Result<PathBuf> {
+    for number in 1..=MAX_FOLDER_NUMBER {
+        let folder = root.join(numbered_folder_name(name, number));
+        match fs::create_dir(&folder) {
+            Ok(()) => return Ok(folder),
+            Err(err) if err.kind() == io::ErrorKind::AlreadyExists => {}
+            Err(err) => return Err(Error::io(&folder, err)),
+        }
+    }
+    Err(Error::FolderExists {
+        path: root.join(name),
+    })
+}
+
 /// Writes the three files of a new meeting into its (empty) folder.
 /// `notes.md` goes last: a folder is a meeting once it has one, and by then
 /// the other two exist.
@@ -338,17 +369,14 @@ fn write_new_meeting_files(summary: &MeetingSummary) -> Result<()> {
 
 /// Where the folder should move to, or `None` if it should stay.
 ///
-/// Only an edited title moves a folder. With the default title the expected
-/// name is the one the folder was created with; if it differs, someone
-/// renamed the folder by hand and that is left alone.
+/// Only an edited title moves a folder; the rule is
+/// [`MeetingSummary::pending_folder_name`]. With the default title the folder
+/// keeps whatever name it has: the one it was created with, numbered or not,
+/// or one it was given by hand.
 fn rename_target(summary: &MeetingSummary) -> Option<PathBuf> {
-    if !summary.title_edited {
-        return None;
-    }
-    let target = summary
-        .folder
-        .with_file_name(summary.expected_folder_name());
-    (target != summary.folder).then_some(target)
+    summary
+        .pending_folder_name()
+        .map(|name| summary.folder.with_file_name(name))
 }
 
 /// Whether something other than `folder` itself already has the name
@@ -371,4 +399,149 @@ fn is_same_dir(a: &Path, b: &Path) -> bool {
 #[cfg(not(unix))]
 fn is_same_dir(_a: &Path, _b: &Path) -> bool {
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn store() -> (tempfile::TempDir, Store) {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path().join("Mneme")).unwrap();
+        (dir, store)
+    }
+
+    fn create(store: &Store) -> MeetingSummary {
+        store
+            .create_meeting(NewMeeting {
+                started_at: "2026-10-27T14:30:00+01:00".parse().unwrap(),
+                model: None,
+                language: None,
+            })
+            .unwrap()
+    }
+
+    fn name_of(folder: &Path) -> &str {
+        folder.file_name().unwrap().to_str().unwrap()
+    }
+
+    fn names_in(dir: &Path) -> Vec<String> {
+        let mut names: Vec<String> = fs::read_dir(dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        names
+    }
+
+    /// What recovery (issue 013) does to a meeting a crash left open: the
+    /// same `close` that finish uses, with status `interrupted`.
+    fn close_as_interrupted(store: &Store, id: &MeetingId) -> FinishedMeeting {
+        let _guard = store.lock();
+        let open = load(&store.find_folder(id).unwrap()).unwrap();
+        store.close(open, 7, MeetingStatus::Interrupted).unwrap()
+    }
+
+    #[test]
+    fn closing_an_interrupted_meeting_leaves_a_numbered_folder_where_it_is() {
+        let (_dir, store) = store();
+        let first = create(&store);
+        let second = create(&store);
+        assert_eq!(name_of(&second.folder), "2026-10-27 1430 Meeting 2");
+        // Even with the plain name free again.
+        fs::remove_dir_all(&first.folder).unwrap();
+
+        let closed = close_as_interrupted(&store, &second.id);
+
+        assert!(closed.rename_error.is_none());
+        assert_eq!(closed.meeting.folder, second.folder);
+        assert_eq!(closed.meeting.status, MeetingStatus::Interrupted);
+        assert_eq!(closed.meeting.duration_secs, Some(7));
+        assert!(!closed.meeting.title_edited);
+        assert_eq!(names_in(store.root()), ["2026-10-27 1430 Meeting 2"]);
+    }
+
+    #[test]
+    fn closing_an_interrupted_meeting_applies_a_title_typed_before_the_crash() {
+        let (_dir, store) = store();
+        let _first = create(&store);
+        let second = create(&store);
+        store.rename_meeting(&second.id, "Standup").unwrap();
+
+        let closed = close_as_interrupted(&store, &second.id);
+
+        assert!(closed.rename_error.is_none());
+        assert_eq!(name_of(&closed.meeting.folder), "2026-10-27 1430 Standup");
+        assert_eq!(
+            names_in(store.root()),
+            ["2026-10-27 1430 Meeting", "2026-10-27 1430 Standup"]
+        );
+    }
+
+    #[test]
+    fn a_free_folder_is_the_plain_name_then_the_lowest_free_number() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+
+        let made: Vec<PathBuf> = (0..3)
+            .map(|_| create_free_folder(root, "name").unwrap())
+            .collect();
+        assert_eq!(
+            made,
+            [root.join("name"), root.join("name 2"), root.join("name 3")]
+        );
+
+        fs::remove_dir(root.join("name 2")).unwrap();
+        assert_eq!(
+            create_free_folder(root, "name").unwrap(),
+            root.join("name 2")
+        );
+        assert_eq!(
+            create_free_folder(root, "name").unwrap(),
+            root.join("name 4")
+        );
+        // Another name starts its own count.
+        assert_eq!(
+            create_free_folder(root, "other").unwrap(),
+            root.join("other")
+        );
+        // Each folder is new and empty.
+        for folder in names_in(root) {
+            assert!(names_in(&root.join(folder)).is_empty());
+        }
+    }
+
+    #[test]
+    fn a_long_title_part_keeps_its_length_and_gets_the_number_after_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let start: StartTime = "2026-10-27T14:30:00+01:00".parse().unwrap();
+
+        for title in ["long ".repeat(100), "🚀".repeat(500)] {
+            let title_part = crate::naming::sanitize_title(&title);
+            let name = crate::naming::folder_name(&start, &title_part);
+            assert_eq!(create_free_folder(root, &name).unwrap(), root.join(&name));
+
+            let second = create_free_folder(root, &name).unwrap();
+
+            assert_eq!(name_of(&second), format!("{name} 2"));
+            assert!(name_of(&second).len() <= 255);
+            assert!(second.is_dir());
+        }
+    }
+
+    #[test]
+    fn a_failure_other_than_a_taken_name_is_reported_at_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing_root = dir.path().join("gone");
+
+        let err = create_free_folder(&missing_root, "name").unwrap_err();
+
+        // The first attempt failed for a reason a number cannot fix, so no
+        // other name was tried.
+        assert!(
+            matches!(&err, Error::Io { path, .. } if *path == missing_root.join("name")),
+            "{err:?}"
+        );
+    }
 }
