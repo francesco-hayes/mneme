@@ -46,8 +46,8 @@
 //! - `notes`: reading and saving the notes body ([`Store::notes`],
 //!   [`Store::save_notes`]) and the note timeline
 //!   ([`Store::save_notes_at`]).
-//!
-//! The settings file gets its own module next to these.
+//! - `settings`: [`SettingsStore`], the app's `settings.json`. It is the one
+//!   file here that does not live under the meetings root.
 
 mod append;
 mod error;
@@ -58,6 +58,7 @@ mod naming;
 mod notes;
 mod recovery;
 mod safe_write;
+mod settings;
 mod store;
 mod time;
 mod transcript;
@@ -71,6 +72,9 @@ pub use naming::{DEFAULT_FOLDER_TITLE, sanitize_title};
 pub use notes::SavedNotes;
 pub use recovery::{RecoveredMeeting, RecoveryFailure, RecoveryReport};
 pub use safe_write::{is_temp_file_name, safe_write};
+pub use settings::{
+    DEFAULT_LANGUAGE, Patch, SETTINGS_FILE, Settings, SettingsPatch, SettingsStore, SettingsWarning,
+};
 pub use store::{FinishedMeeting, NewMeeting, Store};
 pub use time::{ParseStartTimeError, StartTime};
 pub use transcript::{

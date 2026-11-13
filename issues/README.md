@@ -20,7 +20,7 @@ Statuses: `todo`, `in progress`, `done`, `blocked`, `paused` (stopped part-way o
 | [026](026-same-minute-folder-suffix.md) | Folder name suffix for same-minute meetings | 04 | store | 011 | done | — |
 | [012](012-notes-and-timeline.md) | Notes safe writes and note timeline | 04 | store | 026 | done | — |
 | [013](013-listing-and-recovery.md) | Meeting list and crash recovery | 04 | store | 012 | done | — |
-| [014](014-settings-file.md) | Settings file | 04 | store | 013 | in progress | — |
+| [014](014-settings-file.md) | Settings file | 04 | store | 013 | done | — |
 | [015](015-ui-shell.md) | UI shell: routing, theme, recording bar | 05 | ui | 001 | done | — |
 | [016](016-home-screen.md) | Home screen | 05 | ui | 015 | done | — |
 | [017](017-meeting-live-view.md) | Meeting live view and editor | 05 | ui | 016 | done | — |

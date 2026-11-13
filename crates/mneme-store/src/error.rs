@@ -10,8 +10,8 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 /// Why a store operation failed.
 ///
-/// Every variant concerns one file or one meeting; a broken meeting never
-/// makes operations on other meetings fail.
+/// Every variant concerns one file, one meeting or one setting; a broken
+/// meeting never makes operations on other meetings fail.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum Error {
@@ -65,6 +65,12 @@ pub enum Error {
         id: MeetingId,
         status: MeetingStatus,
     },
+
+    /// A value given for a setting cannot be used. Nothing was changed.
+    /// `key` is the setting's name in `settings.json`; `reason` says what is
+    /// wrong with the value.
+    #[error("setting `{key}`: {reason}")]
+    InvalidSetting { key: &'static str, reason: String },
 }
 
 impl Error {
