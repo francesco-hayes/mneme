@@ -122,7 +122,7 @@ The first three can change the design, so they get settled in steps 1 and 2. The
 | Whisper is not a streaming model | It needs chunks cut at silence, and it can invent text on silent audio. | Test chunking in step 2 and drop silent chunks. |
 | Slow models fall behind | A large model on an older Mac can run slower than real time, so the transcript is not ready at stop. | Measure in step 2 and set a target per model. |
 | Two channels finish out of order | Appended lines in transcript.md can land out of time order. | Sort the file by timestamp at stop. |
-| Language | Meetings in Spanish or mixed languages need a language setting, and English-only models will not work for them. | Add a language setting next to the model picker. |
+| Language | Meetings in Spanish or mixed languages need a language setting, and English-only models will not work for them. | Settled 2026-11-12: v1 is English only; no language setting. |
 | No stored audio | A bad transcript cannot be redone with a better model, and models cannot be compared. | Add a dev-only flag that keeps audio. |
 | Note timing for v2 | Enhanced notes need to know when each note line was typed, and that cannot be added after the fact. | Settled 2026-11-12: changed note lines are appended with the meeting time to notes-timeline.jsonl while recording. |
 | Folder name clashes | Two meetings with the same title on one day want the same folder. | Settled 2026-11-12: every folder name includes the start time. |
@@ -136,6 +136,7 @@ Newest first. Add a row whenever something is settled.
 
 | Date | Decision | Rationale |
 | --- | --- | --- |
+| 2026-11-12 | v1 is English only: no language setting in the UI; transcription runs as English | The app was only ever meant for English; a language picker is not MVP. The engine's language support stays in the code, unused. |
 | 2026-11-12 | Note timeline entries stay `{"t","text"}`: each saved state of a line is recorded, with no link to the text it replaced | Keeps the format as designed; the earliest entry for a text says when it was first typed, and v2 matches drafts of a growing line by prefix. |
 | 2026-11-12 | A second meeting started in the same minute gets a numeric folder suffix (`2026-10-27 1430 Meeting 2`) | Start, stop, start again within one minute wants the same folder name; a recording must never fail to start. Corrects the assumption in the folder-name row below. |
 | 2026-11-12 | Note timing is saved from v1: while recording, each autosave appends changed note lines with the meeting time to `notes-timeline.jsonl` | The time a line was typed cannot be recovered later; v2 enhancement uses it to match notes to the transcript; append-only, so edits never break it. |

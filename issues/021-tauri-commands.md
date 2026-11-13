@@ -21,6 +21,8 @@ Connect the UI to the real crates: every method in the API contract works in the
 
 ## Notes from earlier issues
 
+- Decided 2026-11-12: v1 is English only. Always start the session with `Language::english()`; ignore the `language` setting for transcription (it stays in the settings file and the contract, fixed at `en`). No language UI anywhere.
+
 - Order changed 2026-11-12: this issue no longer waits for the last UI screen (020). It needs only the API contract in `src/lib/api/types.ts`. The UI lane may still be working in `src/` while this runs; touch nothing there except `src/lib/api/tauri.ts`, and expect Settings and First run to be placeholders or mid-change when you open the app window.
 
 - From 001: `beforeDevCommand` in `tauri.conf.json` is `VITE_MNEME_API=mock pnpm dev`; set it back to `pnpm dev` once `tauri.ts` is real. Add the area crates to `src-tauri/Cargo.toml`. The mock's behavior where the contract is silent is listed in issue 001's Result ("Contract gaps"); match it or change the mock.

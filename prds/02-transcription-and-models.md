@@ -25,7 +25,7 @@ Whisper is not a streaming model. It needs audio cut into chunks at silence, it 
 
 - whisper.cpp through the `whisper-rs` crate with Metal enabled, linked into the binary.
 - Load a model from a file path; transcribe a slice of samples; return text with start and end offsets inside the slice.
-- Language setting: `auto` or a language code. English-only models (`*.en`) reject any language other than English with a clear error.
+- v1 is English only (decided 2026-11-12): the app always transcribes as English and has no language setting. The engine accepts `auto` or a language code and English-only models (`*.en`) reject other languages; that support was built before the decision and stays in the code, unused.
 - A loaded model is reused across chunks. Loading happens once per recording.
 - Before issue 005 starts, check how actively `whisper-rs` is maintained (scope doc risk). If it is stale, record the finding in the issue and propose the alternative before writing code.
 

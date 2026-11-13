@@ -82,7 +82,7 @@ Unknown keys are kept on rewrite, so hand edits and future versions survive.
 
 ### Settings
 
-`settings.json` in the app data folder, saved through a safe write: default model id, language, global shortcut (none by default), meetings root. Missing or corrupt file falls back to defaults without crashing.
+`settings.json` in the app data folder, saved through a safe write: default model id, language (always `en` in v1; nothing in the UI changes it), global shortcut (none by default), meetings root. Missing or corrupt file falls back to defaults without crashing.
 
 ## Done when
 
