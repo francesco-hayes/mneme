@@ -6,7 +6,7 @@ Statuses: `todo`, `in progress`, `done`, `blocked`. An issue is `done` when its 
 
 | # | Issue | PRD | Lane | Depends on | Status | Manual checks |
 | --- | --- | --- | --- | --- | --- | --- |
-| [001](001-scaffold-workspace.md) | Scaffold workspace and app shell | 00 | base | — | todo | — |
+| [001](001-scaffold-workspace.md) | Scaffold workspace and app shell | 00 | base | — | done | — |
 | [002](002-mic-capture.md) | Mic capture to 16 kHz mono, WAV writer | 01 | audio | 001 | todo | open |
 | [003](003-system-audio-taps.md) | System audio capture with Core Audio taps | 01 | audio | 002 | todo | open |
 | [004](004-two-channel-recorder.md) | Two-channel recorder and `mneme-record` CLI | 01 | audio | 003 | todo | open |

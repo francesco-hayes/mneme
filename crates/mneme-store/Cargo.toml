@@ -1,0 +1,9 @@
+[package]
+name = "mneme-store"
+description = "Meeting folders, transcript, notes and settings files for Mneme."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+mneme-core = { workspace = true }

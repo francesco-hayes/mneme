@@ -1,0 +1,6 @@
+# Minimum macOS is 14.4 (prds/README.md). The Tauri CLI sets the same value
+# from `bundle.macOS.minimumSystemVersion`; setting it here too keeps plain
+# `cargo build` and `pnpm tauri build` on one deployment target, so native
+# dependencies are not rebuilt when switching between the two.
+[env]
+MACOSX_DEPLOYMENT_TARGET = "14.4"

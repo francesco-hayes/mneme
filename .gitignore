@@ -1,0 +1,25 @@
+# Rust
+target/
+
+# Node
+node_modules/
+dist/
+*.tsbuildinfo
+*.local
+*.log
+
+# Whisper model files: downloaded, never committed
+models/
+*.bin
+*.gguf
+*.part
+
+# Audio: Mneme stores no audio, and test recordings stay out of the repo.
+# A crate that needs a small WAV fixture re-includes it in its own .gitignore.
+*.wav
+
+# macOS and editors
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json

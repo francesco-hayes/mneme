@@ -1,0 +1,24 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/mneme-core",
+    "crates/mneme-audio",
+    "crates/mneme-transcribe",
+    "crates/mneme-store",
+    "crates/mneme-pipeline",
+    "src-tauri",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+
+# Crates used in more than one place. A crate inherits an entry with
+# `name = { workspace = true }`. Dependencies only one crate needs go in that
+# crate's own Cargo.toml. Cargo warns about entries nothing uses, so this list
+# holds only what is in use today.
+[workspace.dependencies]
+mneme-core = { path = "crates/mneme-core" }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"

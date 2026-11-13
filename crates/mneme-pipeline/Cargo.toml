@@ -1,0 +1,9 @@
+[package]
+name = "mneme-pipeline"
+description = "Live session for Mneme: capture to transcript."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+mneme-core = { workspace = true }

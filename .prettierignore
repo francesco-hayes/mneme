@@ -1,0 +1,17 @@
+# Build output and generated files
+dist
+target
+pnpm-lock.yaml
+src-tauri/gen
+
+# Rust code is formatted by rustfmt
+crates
+src-tauri/src
+
+# Planning documents are not owned by the code lanes
+prds
+issues
+mneme-scope.md
+
+# The API contract is kept character for character as written in prds/05-ui.md
+src/lib/api/types.ts

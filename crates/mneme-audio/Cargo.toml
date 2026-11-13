@@ -1,0 +1,9 @@
+[package]
+name = "mneme-audio"
+description = "Microphone and system audio capture for Mneme."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+mneme-core = { workspace = true }

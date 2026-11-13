@@ -1,0 +1,20 @@
+[package]
+name = "mneme"
+description = "Mneme desktop app: local-only meeting notes for macOS."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+# The library holds the app so tests can reach it; `main.rs` only calls `run`.
+[lib]
+name = "mneme_lib"
+
+[build-dependencies]
+tauri-build = { version = "2.7.4", features = [] }
+
+[dependencies]
+tauri = { version = "2.12.5", features = [] }
+
+[dev-dependencies]
+serde_json = { workspace = true }

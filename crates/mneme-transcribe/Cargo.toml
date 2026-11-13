@@ -1,0 +1,9 @@
+[package]
+name = "mneme-transcribe"
+description = "Whisper engine, silence chunker and model downloads for Mneme."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+mneme-core = { workspace = true }
