@@ -212,3 +212,8 @@ The last two rows are the id lookup from 010, which reads every `notes.md` under
 - **For v2 (reading the timeline).** Split on `\n` only. Skip lines that are not valid JSON. The same text can appear more than once; the earliest entry is when it was first typed. Texts are trimmed, so look a note line up by its trimmed text. Not every note line has an entry (see imperfections).
 - **PRD 04, Note timeline.** Could say that the text is the trimmed line and that an entry can repeat. The PRD is outside this lane.
 - **`issues/README.md`** lists 012 as `in progress`; the table is outside this lane.
+
+### Decisions after the hand-back (2026-11-12)
+
+- **Drafts:** Francesco chose to leave the entry format as `{"t","text"}`. No replaced-text key is added; v2 matches drafts of a growing line by prefix.
+- **Marker-only lines:** left as implemented. An empty bullet saved on its own is recorded as `-`; filtering it would also drop notes that are only `??` or an emoji.

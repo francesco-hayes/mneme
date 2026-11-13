@@ -71,6 +71,7 @@ Unknown keys are kept on rewrite, so hand edits and future versions survive.
 
 - While recording, each notes save appends one JSON line per changed or added line: `{"t":"hh:mm:ss","text":"..."}`, with meeting time on the transcript's clock.
 - Append-only. It is a record of what was typed when, not a pointer into `notes.md`.
+- The text is the trimmed line. A line that grows across autosaves is recorded once per saved state (`- ask`, `- ask Ana`, …), so entries can repeat a prefix; the earliest entry for a text is when it was first typed. Entries carry no link to the text they replaced (decided 2026-11-12).
 - Nothing reads it in v1.
 
 ### Listing and recovery

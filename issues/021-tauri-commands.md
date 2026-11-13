@@ -36,6 +36,9 @@ Connect the UI to the real crates: every method in the API contract works in the
 - From 017: `saveNotes` must be safe after `stopMeeting` and for meetings that are not recording, because late or retried saves can arrive then. `renameMeeting` receives a trimmed, non-empty title and the field shows the `title` returned.
 - From 017: autosave flushes on editor blur, view unmount and `pagehide`. Check that WKWebView fires `blur` when the app is deactivated and `pagehide` when the window closes.
 
+- From 012: if the session is recording this meeting, call `save_notes_at(&id, &notes, elapsed_ms)` on the same clock as segment `start_ms`; otherwise `save_notes`. `Err` means not saved. `SavedNotes::timeline_error` is something to log, not a failed save. Timeline entries are only written while status is `recording`, so the editor's before-stop flush must reach the store before `finish_meeting`.
+- From 007: keep one `ModelStore` in app state, opened once at launch (opening deletes `.part` files). `downloadModel` is `start_download(id, |p| emit(p))` and drop the handle; `cancelDownload` is `cancel_download(id)`. The store does not know the default or the model in use: refuse deleting the model in use and clear `defaultModelId` in the command. Tests here cannot point the real downloader at a local server; use `open_with_catalog` with files placed in a temp folder.
+
 ## Acceptance criteria
 
 - [ ] Tests with fake sources and a fake transcriber: start then stop produces a complete meeting on disk with transcript and duration; double start is refused; start with no model is refused with a clear message; notes saved during recording produce timeline entries; recovery runs on launch.
