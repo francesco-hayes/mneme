@@ -2,7 +2,7 @@
 //!
 //! `app.rs` is the app's logic with no Tauri in it, `commands.rs` exposes it
 //! to the window, `host.rs` is the real audio, model and Finder side,
-//! `tray.rs` is the menu bar icon.
+//! `tray.rs` is the menu bar icon, `shortcut.rs` the global shortcut.
 
 use std::fs::{File, TryLockError};
 use std::io;
@@ -15,6 +15,7 @@ pub mod app;
 mod commands;
 pub mod dto;
 mod host;
+mod shortcut;
 mod tray;
 
 use commands::AppState;
@@ -86,6 +87,8 @@ pub fn run() {
             if let Err(error) = tray::setup(app.handle()) {
                 eprintln!("mneme: menu bar icon: {error}");
             }
+            // Nor is the global shortcut needed; it logs its own failures.
+            shortcut::setup(app.handle());
             Ok(())
         })
         // Closing the main window hides it: the app, and a recording, carry

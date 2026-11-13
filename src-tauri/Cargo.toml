@@ -16,6 +16,9 @@ tauri-build = { version = "2.7.4", features = [] }
 [dependencies]
 # `tray-icon`: the menu bar icon (issue 022). Part of Tauri itself, no plugin.
 tauri = { version = "2.12.5", features = ["tray-icon"] }
+# The system-wide shortcut (issue 023). Official plugin, no network use.
+# Registered from Rust only: no plugin config and no webview permission.
+tauri-plugin-global-shortcut = "2.4.1"
 # The contract types the commands return.
 serde = { workspace = true }
 # The area crates the commands connect to the window.

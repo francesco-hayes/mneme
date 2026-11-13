@@ -7,7 +7,7 @@ use std::fs::File;
 use std::sync::Arc;
 
 use mneme_store::{Settings, SettingsPatch};
-use tauri::State;
+use tauri::{AppHandle, State};
 
 use crate::app::{AppCore, PermissionKind};
 use crate::dto;
@@ -121,10 +121,16 @@ pub async fn get_settings(state: State<'_, AppState>) -> CommandResult<Settings>
 
 #[tauri::command]
 pub async fn update_settings(
+    app: AppHandle,
     state: State<'_, AppState>,
     patch: SettingsPatch,
 ) -> CommandResult<Settings> {
-    run(state, move |core| core.update_settings(&patch)).await
+    // Through the shortcut module: a new global shortcut is registered
+    // with the system before it is saved.
+    run(state, move |core| {
+        crate::shortcut::update_settings(&app, core, &patch)
+    })
+    .await
 }
 
 #[tauri::command]

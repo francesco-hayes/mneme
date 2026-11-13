@@ -259,8 +259,7 @@ fn on_menu_event(app: &AppHandle, event: MenuEvent) {
 /// does nothing while a stop is under way. Returns at once; the work runs on
 /// the blocking pool. Opens no window unless it fails: then the main window
 /// is shown and gets a [`RECORDING_ERROR_EVENT`].
-// Not called yet: this is the entry point for the global shortcut (023).
-#[allow(dead_code)]
+// The entry point for the global shortcut (`shortcut.rs`).
 pub fn toggle_recording(app: &AppHandle) {
     toggle(app, None);
 }
