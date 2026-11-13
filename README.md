@@ -2,7 +2,7 @@
 
 Local-only meeting notes for macOS. Mneme listens to a meeting, transcribes it on your Mac with a Whisper model, and keeps your notes and the transcript as plain Markdown files. Nothing leaves the machine: no accounts, no telemetry, and no network use apart from downloading the model you pick.
 
-Mneme is under construction. This repository currently holds the skeleton: a Tauri 2 app, a Cargo workspace with one crate per area, and a typed frontend API with a mock. The window shows a placeholder list of mock meetings.
+Mneme is under construction. The parts exist and are tested on their own: audio capture, the Whisper engine and model downloads, storage, and the UI screens running on a mock API. They are not joined yet. **The app's backend commands are not wired (issue 021)**: `src/lib/api/tauri.ts` is a stub, so a built app opens its window but every call to the backend fails with "not implemented". Use `pnpm dev` or `pnpm tauri dev`, which run the UI on the mock, to see the screens.
 
 - What it will do and why: [mneme-scope.md](mneme-scope.md)
 - Requirements per area: [prds/](prds/README.md)
@@ -11,7 +11,9 @@ Mneme is under construction. This repository currently holds the skeleton: a Tau
 ## Requirements
 
 - macOS 14.4 or later on Apple Silicon
-- Rust (stable) and the Xcode Command Line Tools
+- Rust (stable)
+- The Xcode Command Line Tools (`xcode-select --install`); full Xcode is not needed
+- cmake (`brew install cmake`), to build whisper.cpp
 - Node 24 or later and pnpm 11
 
 The Tauri CLI is a dev dependency, so nothing is installed globally.
@@ -24,7 +26,18 @@ pnpm install
 pnpm dev            # UI in the browser at http://localhost:1420, on the mock API
 pnpm tauri dev      # UI in the app window, on the mock API for now (see below)
 pnpm tauri build --debug   # debug app at target/debug/bundle/macos/Mneme.app
+pnpm tauri build           # release app at target/release/bundle/macos/Mneme.app
 ```
+
+The first Rust build compiles whisper.cpp and takes several minutes. Builds are unsigned unless you ask otherwise, which is fine on the Mac that built them. An unsigned app is asked for its microphone and system-audio permission again after every rebuild; [docs/release.md](docs/release.md#dev-signing) describes the one-time dev certificate that stops that, and the Developer ID signing and notarization for a release (which needs an Apple Developer account and has not been run).
+
+### Development tools
+
+Command-line tools that exercise one crate without the app:
+
+- `mneme-record` (in `crates/mneme-audio`): records the microphone and system audio to `mic.wav` and `system.wav`. `cargo run -p mneme-audio --bin mneme-record -- --help`; see [crates/mneme-audio/README.md](crates/mneme-audio/README.md).
+- `mneme-bench` (in `crates/mneme-transcribe`): times a Whisper model on a WAV recording and reports whether it keeps up with a live meeting. `cargo run --release -p mneme-transcribe --bin mneme-bench -- --help`.
+- `mneme-models` (in `crates/mneme-transcribe`): lists the model catalog and downloads a model for tests and `mneme-bench`. `cargo run -p mneme-transcribe --bin mneme-models -- --help`.
 
 ## Checks
 
@@ -36,6 +49,8 @@ pnpm format         # apply Prettier
 
 cargo test --workspace
 cargo test -p mneme-core    # one crate; the app crate is `mneme`
+
+scripts/audit-local-only.sh # fails if network code appears outside the model downloader
 ```
 
 ## Layout
@@ -51,6 +66,8 @@ crates/
 src-tauri/            the Tauri app (crate `mneme`): window, config, icons
 src/                  React and TypeScript UI
   lib/api/            the only way the UI talks to the backend
+scripts/              dev signing, release, local-only audit
+docs/release.md       build, sign, notarize, and the manual test list
 prds/  issues/  mneme-scope.md
 ```
 
@@ -102,6 +119,8 @@ For a private instance with its own timing, call `createMockApi(options)`. `Mock
 - No analytics, crash reporting, update checks or updater plugin.
 - The only code allowed to open a network connection is the model downloader in `mneme-transcribe`.
 - The webview's content security policy allows the app's own files and its channel to the Rust side, and nothing remote. A test in `src-tauri` fails if a remote source is added.
+
+`scripts/audit-local-only.sh` checks all three against the dependency tree and the Tauri configuration; [docs/release.md](docs/release.md#local-only-audit) says what it covers and what it cannot see.
 
 ## License
 

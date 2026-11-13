@@ -31,7 +31,7 @@ Statuses: `todo`, `in progress`, `done`, `blocked`, `paused` (stopped part-way o
 | [022](022-menu-bar-icon.md) | Menu bar icon | 06 | app | 021 | todo | open |
 | [023](023-global-shortcut.md) | Global shortcut | 06 | app | 022 | todo | open |
 | [024](024-permissions-flow.md) | Permissions flow | 06 | app | 023 | todo | open |
-| [025](025-signing-and-release.md) | Signing, notarization, local-only audit | 06 | release | 021 | in progress | open |
+| [025](025-signing-and-release.md) | Signing, notarization, local-only audit | 06 | release | 021 | done | open |
 
 ## Lanes
 
