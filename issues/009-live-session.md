@@ -27,6 +27,9 @@ One `Session` that runs a meeting: two sources in, labeled transcript lines appe
 
 - From 006: one `Chunker` per speaker (`push(&frame) -> Vec<Chunk>`, `flush() -> Option<Chunk>`). Call `flush()` at stop and also when a source ends or fails, or its last words are lost. Chunks arrive up to 28 s after their `start_ms`, so the two speakers' chunks reach the queue in completion order; the sort at stop handles it. The engine can return no spans for a chunk; that is not an error. Backlog is the sum of `chunk.duration_ms()` over the queue. Write `MNEME_KEEP_AUDIO` WAVs from frames, not chunks, because the chunker drops silence.
 
+- From 004: use `mneme_audio::Recorder` for "start both on one clock, one stream of frames, stop both, per-source failures": `let (recorder, frames) = Recorder::start(vec![mic, system]);` with the mic first. `frames` is a std `mpsc` receiver; read it on a blocking thread. Poll `recorder.status()`: when a source's phase becomes `Ended` or `FailedToStart`, drain, then flush that speaker's chunker. At stop: `let report = recorder.stop();`, drain `frames.iter()` (it ends), flush both chunkers. `report.errors()` and `report.duration` feed the summary. `Recorder::start` never blocks, but `stop()` waits for devices to close. A fake source that runs out reads as `Ended` and `is_failure()` is true for it, so compare phases in tests. For `MNEME_KEEP_AUDIO` use `RecordingWriter` (`write` every frame, `finish(report.duration)`). Frame channels are unbounded (about 64 kB per second per source if the consumer stalls).
+- The real mic and tap have each run once or never on hardware; the session must treat a failed or late source as a normal case.
+
 ## Acceptance criteria
 
 All with fake sources and a fake transcriber unless noted:

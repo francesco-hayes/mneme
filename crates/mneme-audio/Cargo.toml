@@ -11,6 +11,9 @@ cpal = "0.18.2"
 rubato = "5.1.0"
 hound = "3.5.1"
 thiserror = "2.0.21"
+# Only the `mneme-record` binary uses this, to turn Ctrl-C into a stop flag.
+# `flag` and `low_level` need none of the default features.
+signal-hook = { version = "0.4.6", default-features = false }
 
 [features]
 # Opt-in use of two private functions of Apple's TCC framework

@@ -41,6 +41,9 @@ Connect the UI to the real crates: every method in the API contract works in the
 - From 012: if the session is recording this meeting, call `save_notes_at(&id, &notes, elapsed_ms)` on the same clock as segment `start_ms`; otherwise `save_notes`. `Err` means not saved. `SavedNotes::timeline_error` is something to log, not a failed save. Timeline entries are only written while status is `recording`, so the editor's before-stop flush must reach the store before `finish_meeting`.
 - From 007: keep one `ModelStore` in app state, opened once at launch (opening deletes `.part` files). `downloadModel` is `start_download(id, |p| emit(p))` and drop the handle; `cancelDownload` is `cancel_download(id)`. The store does not know the default or the model in use: refuse deleting the model in use and clear `defaultModelId` in the command. Tests here cannot point the real downloader at a local server; use `open_with_catalog` with files placed in a temp folder.
 
+- From 018: `getMeeting` called right after the recording state goes idle must already return the final status, `durationSecs` and `transcriptLineCount`; the view reads the meeting once at that moment. Emit idle only after the store has finished the meeting. In the app window, check with a long transcript: open and scroll speed of the pane, that Shift-Command-T reaches the page, that Edit > Copy runs the pane's copy handler, and that Select All stays inside the list.
+- From 016: Home marks the live row from `status: recording` in `listMeetings` and re-reads when `RecordingState.meetingId` flips between an id and null.
+
 ## Acceptance criteria
 
 - [ ] Tests with fake sources and a fake transcriber: start then stop produces a complete meeting on disk with transcript and duration; double start is refused; start with no model is refused with a clear message; notes saved during recording produce timeline entries; recovery runs on launch.

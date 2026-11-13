@@ -32,7 +32,7 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{ErrorKind, SampleFormat, SizedSample};
 use mneme_core::Speaker;
 
-use crate::capture::{Backend, Capture, OpenStream, StreamEvents, Timing};
+use crate::capture::{Backend, Capture, OpenStream, StreamEvents, Timing, make_ready};
 use crate::convert::{ToF32, i24_to_f32};
 use crate::permission::{PermissionStatus, microphone_permission_status};
 use crate::source::SourceState;
@@ -73,11 +73,9 @@ impl AudioSource for MicSource {
     }
 
     fn start(&mut self, start: Instant, sink: FrameSender) -> Result<(), AudioError> {
-        if self.is_running() {
-            return Err(AudioError::AlreadyRunning);
-        }
-        // Clean up after a capture thread that ended by itself.
-        self.stop();
+        // Refuses while capturing; clears away a capture thread that ended
+        // by itself.
+        make_ready(&mut self.capture, &self.state)?;
 
         match microphone_permission_status() {
             PermissionStatus::Denied => {

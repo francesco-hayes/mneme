@@ -98,7 +98,7 @@ use std::time::Instant;
 
 use mneme_core::Speaker;
 
-use crate::capture::Capture;
+use crate::capture::{Capture, make_ready};
 use crate::source::SourceState;
 use crate::{AudioError, AudioSource, FrameSender};
 
@@ -189,11 +189,9 @@ impl AudioSource for SystemAudioSource {
     }
 
     fn start(&mut self, start: Instant, sink: FrameSender) -> Result<(), AudioError> {
-        if self.is_running() {
-            return Err(AudioError::AlreadyRunning);
-        }
-        // Clean up after a capture thread that ended by itself.
-        self.stop();
+        // Refuses while capturing; clears away a capture thread that ended
+        // by itself.
+        make_ready(&mut self.capture, &self.state)?;
         self.capture = Some(imp::start(
             &self.excluded,
             !self.skip_access_check,

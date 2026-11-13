@@ -16,6 +16,7 @@
 //! on the real-time audio thread.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
@@ -149,6 +150,34 @@ impl Default for Timing {
 pub(crate) struct Capture {
     tx: mpsc::Sender<Event>,
     thread: Option<JoinHandle<()>>,
+    /// Set by the capture thread when it ends by itself. See
+    /// [`has_ended`](Self::has_ended).
+    ended: Arc<AtomicBool>,
+}
+
+/// What a source's `start` does before anything else: refuses with
+/// [`AudioError::AlreadyRunning`] while `capture` is live, and otherwise
+/// clears away a capture thread that ended by itself, waiting until it has
+/// released its stream.
+///
+/// "Live" is not the same as `state.is_running()`. A capture thread that
+/// ends by itself (the frame receiver went away) queues
+/// [`AudioError::SinkClosed`], closes its stream, drops its frame sender and
+/// only then reports stopped, and closing a stream can take a while. An
+/// owner that saw the error and starts again must not be told the source is
+/// still running.
+pub(crate) fn make_ready(
+    capture: &mut Option<Capture>,
+    state: &SourceState,
+) -> Result<(), AudioError> {
+    let ended = capture.as_ref().is_some_and(Capture::has_ended);
+    if state.is_running() && !ended {
+        return Err(AudioError::AlreadyRunning);
+    }
+    if let Some(mut capture) = capture.take() {
+        capture.stop();
+    }
+    Ok(())
 }
 
 impl Capture {
@@ -173,6 +202,8 @@ impl Capture {
         let (tx, rx) = mpsc::channel();
         let (ready_tx, ready_rx) = mpsc::channel();
         let thread_tx = tx.clone();
+        let ended = Arc::new(AtomicBool::new(false));
+        let thread_ended = Arc::clone(&ended);
         let thread = thread::Builder::new()
             .name(thread_name.to_owned())
             .spawn(move || {
@@ -209,6 +240,7 @@ impl Capture {
                     reopen: false,
                     done: false,
                     sink_closed: false,
+                    ended: thread_ended,
                     last_reported: None,
                 }
                 .run();
@@ -220,6 +252,7 @@ impl Capture {
             Ok(Ok(())) => Ok(Self {
                 tx,
                 thread: Some(thread),
+                ended,
             }),
             Ok(Err(err)) => {
                 let _ = thread.join();
@@ -232,6 +265,14 @@ impl Capture {
                 ))
             }
         }
+    }
+
+    /// `true` once the capture thread has decided to end without being told
+    /// to (the frame receiver went away). It may still be closing its stream,
+    /// and the source's state may still read as running; [`stop`](Self::stop)
+    /// waits for it.
+    pub(crate) fn has_ended(&self) -> bool {
+        self.ended.load(Ordering::SeqCst)
     }
 
     /// Stops capture and waits until the last frame is sent and the frame
@@ -269,6 +310,8 @@ struct Worker<B: Backend> {
     done: bool,
     /// The frame receiver is gone; nothing more can be delivered.
     sink_closed: bool,
+    /// Shared with the [`Capture`] handle: this thread is ending by itself.
+    ended: Arc<AtomicBool>,
     /// Last error queued during the current outage, so a failure repeated on
     /// every retry is reported once. Cleared when audio flows again.
     last_reported: Option<AudioError>,
@@ -346,6 +389,8 @@ impl<B: Backend> Worker<B> {
 
     /// Nobody is listening any more: end capture.
     fn close_sink(&mut self) {
+        // Before the error: whoever sees the error must also see this.
+        self.ended.store(true, Ordering::SeqCst);
         self.state.report(AudioError::SinkClosed);
         self.sink_closed = true;
         self.done = true;
@@ -528,6 +573,9 @@ pub(crate) mod tests {
         events: Option<StreamEvents>,
         /// Number of upcoming `open` calls that fail.
         failing_opens: usize,
+        /// While set, closing a stream blocks, like a device that is slow
+        /// to let go.
+        hold_teardown: bool,
     }
 
     #[derive(Clone, Default)]
@@ -537,7 +585,15 @@ pub(crate) mod tests {
 
     impl Drop for ScriptedStream {
         fn drop(&mut self) {
-            self.0.lock().unwrap().live_streams -= 1;
+            loop {
+                let mut script = self.0.lock().unwrap();
+                if !script.hold_teardown {
+                    script.live_streams -= 1;
+                    return;
+                }
+                drop(script);
+                thread::sleep(Duration::from_millis(1));
+            }
         }
     }
 
@@ -575,6 +631,10 @@ pub(crate) mod tests {
             let backend = Self::default();
             backend.set_device(Some((name, rate)));
             backend
+        }
+
+        fn hold_teardown(&self, hold: bool) {
+            self.0.lock().unwrap().hold_teardown = hold;
         }
 
         fn set_device(&self, device: Option<(&str, u32)>) {
@@ -823,5 +883,79 @@ pub(crate) mod tests {
         assert!(!state.is_running());
         assert_eq!(backend.live_streams(), 0);
         assert_eq!(total_samples(&rx.iter().collect::<Vec<_>>()), 800);
+    }
+
+    #[test]
+    fn a_running_capture_refuses_a_second_start() {
+        let start = Instant::now();
+        let backend = ScriptedBackend::with_device("built-in", 16_000);
+        let (capture, state, _rx) = start_capture(&backend, start, fast());
+        let mut slot = Some(capture.unwrap());
+
+        assert_eq!(
+            make_ready(&mut slot, &state),
+            Err(AudioError::AlreadyRunning)
+        );
+        // Refusing changed nothing.
+        assert!(slot.is_some());
+        assert!(state.is_running());
+        assert_eq!(backend.live_streams(), 1);
+
+        // Nothing to clear away is fine too.
+        assert_eq!(make_ready(&mut None, &SourceState::new()), Ok(()));
+    }
+
+    #[test]
+    fn a_capture_that_ended_by_itself_can_be_started_again_at_once() {
+        let start = Instant::now();
+        let backend = ScriptedBackend::with_device("built-in", 16_000);
+        let (capture, state, rx) = start_capture(&backend, start, fast());
+        let mut slot = Some(capture.unwrap());
+        assert!(!slot.as_ref().unwrap().has_ended());
+
+        // The consumer goes away, and the device is slow to close: the
+        // capture thread has given up but cannot report stopped yet.
+        backend.hold_teardown(true);
+        drop(rx);
+        backend.play(start, 0, 16_000, 0.1);
+        wait_until("the capture thread to notice", || {
+            state.take_errors() == [AudioError::SinkClosed]
+        });
+        assert!(state.is_running(), "the window this test is about");
+        assert_eq!(backend.live_streams(), 1);
+
+        // Starting again in that window is not "already running": it waits
+        // for the old thread to let go of its stream.
+        let releaser = {
+            let backend = backend.clone();
+            thread::spawn(move || {
+                thread::sleep(Duration::from_millis(30));
+                backend.hold_teardown(false);
+            })
+        };
+        assert_eq!(make_ready(&mut slot, &state), Ok(()));
+        assert!(slot.is_none());
+        assert!(!state.is_running());
+        assert_eq!(backend.live_streams(), 0);
+        releaser.join().unwrap();
+
+        // And a fresh capture then starts on the same state.
+        let (tx, rx) = frame_channel();
+        let thread_backend = backend.clone();
+        let mut capture = Capture::start(
+            "test-capture",
+            move || thread_backend,
+            Speaker::Me,
+            start,
+            tx,
+            Arc::clone(&state),
+            fast(),
+        )
+        .unwrap();
+        assert!(state.is_running());
+        backend.play(start, 500, 16_000, 0.1);
+        capture.stop();
+        assert_eq!(total_samples(&rx.iter().collect::<Vec<_>>()), 1_600);
+        assert!(state.take_errors().is_empty());
     }
 }
