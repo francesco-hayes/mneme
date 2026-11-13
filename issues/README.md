@@ -14,7 +14,7 @@ Statuses: `todo`, `in progress`, `done`, `blocked`, `paused` (stopped part-way o
 | [006](006-silence-chunker.md) | Silence chunker | 02 | transcribe | 005 | done | — |
 | [007](007-model-catalog-downloads.md) | Model catalog and download manager | 02 | transcribe | 006 | done | — |
 | [008](008-benchmark-cli.md) | Benchmark CLI and speed table | 02 | transcribe | 007 | paused | open |
-| [009](009-live-session.md) | Live session: capture to transcript | 03 | pipeline | 004, 006, 011 | in progress | open |
+| [009](009-live-session.md) | Live session: capture to transcript | 03 | pipeline | 004, 006, 011 | done | open |
 | [010](010-meeting-folders.md) | Meeting folders, frontmatter, naming | 04 | store | 001 | done | — |
 | [011](011-transcript-file.md) | Transcript append, parse, sort | 04 | store | 010 | done | — |
 | [026](026-same-minute-folder-suffix.md) | Folder name suffix for same-minute meetings | 04 | store | 011 | done | — |
@@ -27,7 +27,7 @@ Statuses: `todo`, `in progress`, `done`, `blocked`, `paused` (stopped part-way o
 | [018](018-meeting-after-view.md) | Meeting after view and transcript pane | 05 | ui | 017 | done | — |
 | [019](019-settings-screen.md) | Settings screen | 05 | ui | 018 | done | — |
 | [020](020-first-run.md) | First run | 05 | ui | 019 | in progress | — |
-| [021](021-tauri-commands.md) | Tauri commands and events | 06 | app | 009, 007, 014 | todo | open |
+| [021](021-tauri-commands.md) | Tauri commands and events | 06 | app | 009, 007, 014 | in progress | open |
 | [022](022-menu-bar-icon.md) | Menu bar icon | 06 | app | 021 | todo | open |
 | [023](023-global-shortcut.md) | Global shortcut | 06 | app | 022 | todo | open |
 | [024](024-permissions-flow.md) | Permissions flow | 06 | app | 023 | todo | open |

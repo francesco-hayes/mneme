@@ -7,3 +7,15 @@ license.workspace = true
 
 [dependencies]
 mneme-core = { workspace = true }
+# Sources, the recorder that runs them on one clock, and the WAV writer behind
+# MNEME_KEEP_AUDIO.
+mneme-audio = { path = "../mneme-audio" }
+# The `Transcriber` trait and the chunker.
+mneme-transcribe = { path = "../mneme-transcribe" }
+# Only for the adapter that makes the store's `TranscriptWriter` a
+# `TranscriptSink` (src/sink.rs). The session itself knows the trait only.
+mneme-store = { path = "../mneme-store" }
+
+[dev-dependencies]
+# Temp folders for the kept-audio tests and the end-to-end test's store.
+tempfile = "3.27.0"

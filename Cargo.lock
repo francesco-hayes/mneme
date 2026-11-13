@@ -2185,7 +2185,11 @@ dependencies = [
 name = "mneme-pipeline"
 version = "0.1.0"
 dependencies = [
+ "mneme-audio",
  "mneme-core",
+ "mneme-store",
+ "mneme-transcribe",
+ "tempfile",
 ]
 
 [[package]]
