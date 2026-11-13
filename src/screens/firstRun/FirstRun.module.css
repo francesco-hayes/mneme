@@ -1,0 +1,88 @@
+/* "Step 1 of 2", over the step's title. */
+.step {
+  margin-bottom: var(--space-1);
+  padding: 0 var(--space-3);
+  color: var(--color-text-secondary);
+  font-size: var(--text-caption);
+  font-weight: var(--weight-medium);
+}
+
+/* Shown with `appears-late` (styles/base.css). */
+.loading {
+  padding: var(--space-2) var(--space-3);
+  color: var(--color-text-secondary);
+}
+
+.message {
+  margin-top: var(--space-2);
+  padding: 0 var(--space-3);
+}
+
+/* The system's radio button, in the accent color. */
+.radio {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--color-accent);
+}
+
+/* Under the step's box: a quiet control or note, then the step's main button
+   at the end. */
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: var(--control-height);
+  margin-top: var(--space-3);
+  padding: 0 var(--space-1);
+}
+
+.footer > :last-child {
+  flex: none;
+  margin-left: auto;
+}
+
+.footerNote {
+  min-width: 0;
+  padding: 0 var(--space-2);
+  color: var(--color-text-secondary);
+  font-size: var(--text-small);
+}
+
+/* A permission's state at the end of its row. */
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-text-secondary);
+  font-size: var(--text-small);
+}
+
+.status[data-status="granted"] {
+  gap: var(--space-1);
+}
+
+.notAllowed {
+  color: var(--color-danger);
+}
+
+/* What to do about a denied permission, under its row. */
+.denied {
+  margin: var(--space-1) 0;
+  color: var(--color-text-secondary);
+  font-size: var(--text-small);
+}
+
+.advice {
+  margin-top: var(--space-3);
+  padding: 0 var(--space-3);
+  font-size: var(--text-small);
+}
+
+.privacy {
+  margin-top: var(--space-6);
+  padding: 0 var(--space-3);
+  color: var(--color-text-secondary);
+  font-size: var(--text-small);
+}
