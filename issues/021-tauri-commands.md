@@ -32,6 +32,10 @@ Connect the UI to the real crates: every method in the API contract works in the
 - From 010: store types do not derive `serde`; map them to the contract types in `src-tauri` (`id.as_str()`, `started_at.to_rfc3339()`, `duration_secs`, `status.as_str()`, `folder`).
 - From 002: the frame channel is `std::sync::mpsc`; `request_microphone_permission()` blocks until the user answers, so call it off the UI thread.
 
+- From 017: the editor runs in a shadow root so CodeMirror's styles are a constructed stylesheet, which `style-src 'self'` allowed in Chromium. This is unproven in WKWebView. In the app window check: the editor is styled; typing, selection, IME and copy/paste work inside the shadow root; `body`'s `-webkit-user-select: none` does not block the editor. If styles are blocked, the fallback is `EditorView.cspNonce` plus a per-load nonce in the CSP; report it rather than loosening the policy.
+- From 017: `saveNotes` must be safe after `stopMeeting` and for meetings that are not recording, because late or retried saves can arrive then. `renameMeeting` receives a trimmed, non-empty title and the field shows the `title` returned.
+- From 017: autosave flushes on editor blur, view unmount and `pagehide`. Check that WKWebView fires `blur` when the app is deactivated and `pagehide` when the window closes.
+
 ## Acceptance criteria
 
 - [ ] Tests with fake sources and a fake transcriber: start then stop produces a complete meeting on disk with transcript and duration; double start is refused; start with no model is refused with a clear message; notes saved during recording produce timeline entries; recovery runs on launch.

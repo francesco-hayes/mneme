@@ -6,6 +6,9 @@
 //! - [`FakeTranscriber`] implements it with scripted text, for tests.
 //! - [`Chunker`] cuts one speaker's stream of frames into [`Chunk`]s at
 //!   pauses and drops silence, so the transcriber only ever gets speech.
+//! - [`ModelStore`] lists the Whisper models of the [`catalog`], downloads
+//!   and verifies the ones the user picks, and deletes them. Its downloader
+//!   is the only code in the app that uses the network.
 //!
 //! ```no_run
 //! use mneme_core::{AudioFrame, Speaker};
@@ -45,12 +48,17 @@
 
 mod chunker;
 mod fake;
+mod models;
 mod text;
 mod transcriber;
 mod whisper;
 
 pub use chunker::{Chunk, Chunker, ChunkerConfig, ChunkerStats};
 pub use fake::{FakeCall, FakeTranscriber};
+pub use models::{
+    DownloadHandle, DownloadProgress, DownloadState, MODEL_HOST, MODEL_REPOSITORY, MODEL_REVISION,
+    ModelError, ModelInfo, ModelSpec, ModelStore, catalog, find_model,
+};
 pub use transcriber::{
     Language, ParseLanguageError, TextSpan, TranscribeError, Transcriber, duration_ms,
 };

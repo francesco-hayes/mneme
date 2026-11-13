@@ -8,11 +8,13 @@
 # The file comes from the ggerganov/whisper.cpp repository on Hugging Face.
 # Size and SHA-256 are the values Hugging Face lists for the file (checked
 # 2026-11-12); the download is verified against them before it is put in
-# place.
+# place. URL, revision, size and checksum are those of the `tiny.en` entry in
+# the model catalog (src/models/catalog.rs); keep the two the same.
 set -eu
 
 MODEL="ggml-tiny.en.bin"
-URL="https://huggingface.co/ggerganov/whisper.cpp/resolve/main/${MODEL}"
+REVISION="5359861c739e955e79d9a303bcbc70fb988958b1"
+URL="https://huggingface.co/ggerganov/whisper.cpp/resolve/${REVISION}/${MODEL}"
 SHA256="921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1f"
 SIZE_BYTES=77704715
 
@@ -38,7 +40,8 @@ fi
 echo "Downloading ${URL} (${SIZE_BYTES} bytes)"
 rm -f "${partial}"
 trap 'rm -f "${partial}"' EXIT
-curl --fail --location --proto '=https' --tlsv1.2 --output "${partial}" "${URL}"
+curl --fail --location --proto '=https' --proto-redir '=https' --tlsv1.2 \
+    --output "${partial}" "${URL}"
 
 actual="$(sha256_of "${partial}")"
 if [ "${actual}" != "${SHA256}" ]; then

@@ -8,8 +8,9 @@ dist/
 *.local
 *.log
 
-# Whisper model files: downloaded, never committed
-models/
+# Whisper model files: downloaded, never committed.
+# Anchored to a crate's top level so a source module named `models` is not ignored.
+/crates/*/models/
 *.bin
 *.gguf
 *.part

@@ -12,7 +12,18 @@ mneme-core = { workspace = true }
 # cmake and the Xcode Command Line Tools but not full Xcode. Pinned exactly:
 # see issues/005-whisper-engine.md for the maintenance check behind this.
 whisper-rs = { version = "=0.16.0", features = ["metal"] }
+# HTTP client for model downloads (src/models/). This is the only crate in the
+# app allowed to open a network connection (PRD 00, local-only rules), and
+# `ureq` is the only dependency here that opens sockets. It is blocking, so it
+# forces no async runtime on callers. Default features are off to leave out
+# gzip; `rustls` gives TLS with the `ring` provider and the bundled Mozilla
+# root certificates (`webpki-roots`). See issues/007-model-catalog-downloads.md.
+ureq = { version = "3.5.2", default-features = false, features = ["rustls"] }
+# SHA-256 of downloaded model files.
+sha2 = "0.11.1"
 
 [dev-dependencies]
 # Reads the speech fixture in the integration test.
 hound = "3.5.1"
+# Temp folders for the model store tests.
+tempfile = "3.27.0"

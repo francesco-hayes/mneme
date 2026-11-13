@@ -12,8 +12,8 @@ Statuses: `todo`, `in progress`, `done`, `blocked`. An issue is `done` when its 
 | [004](004-two-channel-recorder.md) | Two-channel recorder and `mneme-record` CLI | 01 | audio | 003 | in progress | open |
 | [005](005-whisper-engine.md) | Whisper engine wrapper | 02 | transcribe | 001 | done | — |
 | [006](006-silence-chunker.md) | Silence chunker | 02 | transcribe | 005 | done | — |
-| [007](007-model-catalog-downloads.md) | Model catalog and download manager | 02 | transcribe | 006 | in progress | — |
-| [008](008-benchmark-cli.md) | Benchmark CLI and speed table | 02 | transcribe | 007 | todo | open |
+| [007](007-model-catalog-downloads.md) | Model catalog and download manager | 02 | transcribe | 006 | done | — |
+| [008](008-benchmark-cli.md) | Benchmark CLI and speed table | 02 | transcribe | 007 | in progress | open |
 | [009](009-live-session.md) | Live session: capture to transcript | 03 | pipeline | 004, 006, 011 | todo | open |
 | [010](010-meeting-folders.md) | Meeting folders, frontmatter, naming | 04 | store | 001 | done | — |
 | [011](011-transcript-file.md) | Transcript append, parse, sort | 04 | store | 010 | done | — |
