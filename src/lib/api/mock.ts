@@ -32,6 +32,7 @@ import type {
   ModelInfo,
   Permission,
   Permissions,
+  RecordingError,
   RecordingState,
   Settings,
   TranscriptLine,
@@ -88,6 +89,11 @@ export interface MockControls {
   failNext(method: keyof Api, message?: string): void;
   /** Makes the next download fail halfway with an `error` progress event. */
   failNextDownload(message?: string): void;
+  /**
+   * Emits a recording error, as the backend does when a start or stop asked
+   * for from the menu bar or the global shortcut fails. Nothing else changes.
+   */
+  emitRecordingError(action: RecordingError["action"], message?: string): void;
   /** Ids passed to `showInFinder` since the last reset, oldest first. */
   readonly revealedInFinder: readonly string[];
 }
@@ -200,6 +206,7 @@ export function createMockApi(initialOptions: MockOptions = {}): MockApi {
 
   // Listeners survive `reset`.
   const recordingListeners = new Set<(s: RecordingState) => void>();
+  const recordingErrorListeners = new Set<(e: RecordingError) => void>();
   const downloadListeners = new Set<(p: DownloadProgress) => void>();
 
   function toRecord(seed: MockMeetingSeed): MeetingRecord {
@@ -526,6 +533,15 @@ export function createMockApi(initialOptions: MockOptions = {}): MockApi {
       };
     },
 
+    // Only `mock.emitRecordingError` sends these: a start or stop made
+    // through this API reports its failure by rejecting.
+    onRecordingError: (cb) => {
+      recordingErrorListeners.add(cb);
+      return () => {
+        recordingErrorListeners.delete(cb);
+      };
+    },
+
     listModels: () =>
       call("listModels", () =>
         MOCK_MODEL_CATALOG.map((model): ModelInfo => ({
@@ -661,6 +677,16 @@ export function createMockApi(initialOptions: MockOptions = {}): MockApi {
     },
     failNextDownload(message = "The download failed. Check your connection.") {
       nextDownloadFailure = message;
+    },
+    emitRecordingError(
+      action,
+      message = action === "start"
+        ? "Mneme is not allowed to use the microphone."
+        : "The recording could not be closed.",
+    ) {
+      for (const listener of [...recordingErrorListeners]) {
+        listener({ action, message });
+      }
     },
     get revealedInFinder() {
       return [...revealedInFinder];

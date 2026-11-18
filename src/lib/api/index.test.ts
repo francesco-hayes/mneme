@@ -47,7 +47,7 @@ async function loadTauriApi(): Promise<Api> {
 test("every method of the Tauri implementation calls its backend command", async () => {
   const tauriApi = await loadTauriApi();
   const methods = Object.keys(tauriApi) as (keyof Api)[];
-  expect(methods).toHaveLength(19);
+  expect(methods).toHaveLength(20);
 
   invoke.mockResolvedValue("result");
   const calls: [Promise<unknown>, string, Record<string, unknown>?][] = [
@@ -81,8 +81,8 @@ test("every method of the Tauri implementation calls its backend command", async
       { kind: "systemAudio" },
     ],
   ];
-  // The two subscriptions are the only methods that are not commands.
-  expect(calls).toHaveLength(methods.length - 2);
+  // The three subscriptions are the only methods that are not commands.
+  expect(calls).toHaveLength(methods.length - 3);
   for (const [result, command, args] of calls) {
     await expect(result, command).resolves.toBe("result");
     expect(invoke, command).toHaveBeenCalledWith(command, args);
@@ -114,5 +114,26 @@ test("subscriptions deliver event payloads until they are cancelled", async () =
   stop();
   expect(unlisten).toHaveBeenCalledTimes(1);
   handler({ payload: state });
+  expect(seen).toHaveLength(1);
+});
+
+test("recording errors from the menu bar and the shortcut are subscribed to", async () => {
+  const tauriApi = await loadTauriApi();
+  const unlisten = vi.fn();
+  listen.mockResolvedValue(unlisten);
+  const seen: unknown[] = [];
+
+  const stop = tauriApi.onRecordingError((error) => seen.push(error));
+  expect(listen).toHaveBeenCalledTimes(1);
+  expect(listen).toHaveBeenCalledWith("recording-error", expect.any(Function));
+  const handler = listen.mock.calls[0][1] as (e: { payload: unknown }) => void;
+  const error = { action: "start", message: "The microphone is not allowed." };
+  handler({ payload: error });
+  expect(seen).toEqual([error]);
+
+  await Promise.resolve();
+  stop();
+  expect(unlisten).toHaveBeenCalledTimes(1);
+  handler({ payload: error });
   expect(seen).toHaveLength(1);
 });

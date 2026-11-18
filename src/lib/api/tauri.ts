@@ -11,13 +11,15 @@ import type {
   ModelInfo,
   Permission,
   Permissions,
+  RecordingError,
   RecordingState,
   Settings,
   TranscriptLine,
 } from "./types";
 
-/** Event names, as `src-tauri/src/host.rs` sends them. */
+/** Event names, as `src-tauri/src/host.rs` and `src-tauri/src/tray.rs` send them. */
 const RECORDING_STATE_EVENT = "recording-state";
+const RECORDING_ERROR_EVENT = "recording-error";
 const DOWNLOAD_PROGRESS_EVENT = "download-progress";
 
 /**
@@ -74,6 +76,8 @@ export const tauriApi: Api = {
   getRecordingState: () => call<RecordingState>("get_recording_state"),
   onRecordingState: (cb) =>
     subscribe<RecordingState>(RECORDING_STATE_EVENT, cb),
+  onRecordingError: (cb) =>
+    subscribe<RecordingError>(RECORDING_ERROR_EVENT, cb),
   listModels: () => call<ModelInfo[]>("list_models"),
   downloadModel: (id) => call<void>("download_model", { id }),
   cancelDownload: (id) => call<void>("cancel_download", { id }),

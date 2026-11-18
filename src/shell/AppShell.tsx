@@ -5,6 +5,7 @@ import { SettingsScreen } from "../screens/SettingsScreen";
 import { type Route, useNavigation } from "../state/navigation";
 import styles from "./AppShell.module.css";
 import { RecordingBar } from "./RecordingBar";
+import { RecordingErrorNotice } from "./RecordingErrorNotice";
 
 function CurrentScreen({ route }: { route: Route }) {
   switch (route.name) {
@@ -22,7 +23,11 @@ function CurrentScreen({ route }: { route: Route }) {
   }
 }
 
-/** The window's layout: the current screen, and the recording bar under it. */
+/**
+ * The window's layout: the current screen and, under it, the recording bar.
+ * A start or stop that failed outside the window is said in one line between
+ * the two, so it shows on every screen without covering any of it.
+ */
 export function AppShell() {
   const { route } = useNavigation();
 
@@ -31,6 +36,7 @@ export function AppShell() {
       <div className={styles.screenArea}>
         <CurrentScreen route={route} />
       </div>
+      <RecordingErrorNotice />
       <RecordingBar />
     </div>
   );

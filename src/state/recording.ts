@@ -1,12 +1,13 @@
 // App-wide recording state.
 //
 // `RecordingProvider` holds the app's one subscription to
-// `api.getRecordingState` / `api.onRecordingState`. Anything that needs to know
+// `api.getRecordingState` / `api.onRecordingState`, and the one to
+// `api.onRecordingError`. Anything that needs to know
 // whether a meeting is being recorded reads it with `useRecording` instead of
 // calling the API again.
 
 import { createContext, useContext, useEffect, useRef } from "react";
-import type { Meeting, RecordingState } from "../lib/api";
+import type { Meeting, RecordingError, RecordingState } from "../lib/api";
 
 export type BeforeStopHandler = () => void | Promise<void>;
 
@@ -26,6 +27,14 @@ export interface Recording {
   stop: () => Promise<Meeting | null>;
   /** Why the last Stop of the current recording failed, or null. */
   stopError: string | null;
+  /**
+   * The latest start or stop that failed outside the window (menu bar, global
+   * shortcut), or null. A failure inside the window is not here: it is shown
+   * where it happened. Cleared by `dismissOutsideError` and when a recording
+   * next starts.
+   */
+  outsideError: RecordingError | null;
+  dismissOutsideError: () => void;
   /**
    * Registers work to finish before a stop, and returns the function that
    * removes it. A handler that fails does not block the stop. Components

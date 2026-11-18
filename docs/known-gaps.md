@@ -11,7 +11,7 @@ What that report does not tell us, because the details were not recorded: whethe
 ## Still open, to check when convenient
 
 1. **Forced quit mid-meeting, then relaunch.** The meeting should come back marked as interrupted with its transcript. Recovery is tested with a killed child process only. Not yet checked (noted 2026-11-18).
-2. **The silent error.** A failed start from the menu bar or the shortcut opens the window with no message. Not yet checked or fixed (noted 2026-11-18); see "Unfinished work".
+2. **The error message for a failed start from the menu bar or the shortcut.** Fixed in issue 027 (2026-11-18): the window now shows "Could not start recording: …" on any screen. Not yet seen in the real app. To check: turn off Mneme's microphone access in System Settings, choose Start Recording from the menu bar icon, and the window should open with the reason. Turn access back on afterwards.
 3. **A real call with headphones,** if the first meeting was not one: only Me in the mic lines, only the other side in the Them lines.
 4. **System audio edge cases:** capture through silence, excluding Mneme's own sound, following an output device change mid-meeting, a long meeting.
 5. **The visual checklist,** for anything not already looked at: the editor (in a shadow root) styled and typing, selection and copy/paste, the top bar under the title bar, the accent color, `<progress>` bars and radio buttons, Shift-Command-T toggling the transcript, the menu bar icon and timer.
@@ -33,7 +33,6 @@ What that report does not tell us, because the details were not recorded: whethe
 ## Unfinished work
 
 - **008 benchmark:** the `mneme-bench` tool is built and its tests pass, but no model has been benchmarked and there is no table. The agent was stopped before reporting, so its behavior is unreviewed. Models on disk: tiny.en, base, small, large-v3-turbo.
-- **A start error from the menu bar or the shortcut shows no message.** The backend opens the window and emits a `recording-error` event, but the UI has no listener for it. Issue 022 says this must never fail silently, so fix this early: it needs a new subscription in the API contract, the mock and the shell.
 - **Entitlements** are set (audio input only) but have never been embedded by a real signature; the debug build is ad-hoc signed.
 - **docs/release.md** gathered its manual checks before 009 and 020–024 were finished; re-gather them from the issue files. Its README note that the backend is not wired is also out of date.
 

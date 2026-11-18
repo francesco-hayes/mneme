@@ -14,6 +14,7 @@ export interface DownloadProgress { modelId: string; receivedBytes: number; tota
 export interface Settings { defaultModelId: string | null; language: string; globalShortcut: string | null }
 export interface RecordingState { status: 'idle' | 'recording' | 'stopping'; meetingId: string | null; elapsedSecs: number }
 export interface Permissions { microphone: Permission; systemAudio: Permission }
+export interface RecordingError { action: 'start' | 'stop'; message: string }
 
 export interface Api {
   listMeetings(): Promise<MeetingSummary[]>;
@@ -26,6 +27,7 @@ export interface Api {
   showInFinder(id: string): Promise<void>;
   getRecordingState(): Promise<RecordingState>;
   onRecordingState(cb: (s: RecordingState) => void): () => void;
+  onRecordingError(cb: (e: RecordingError) => void): () => void;
   listModels(): Promise<ModelInfo[]>;
   downloadModel(id: string): Promise<void>;
   cancelDownload(id: string): Promise<void>;
