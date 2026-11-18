@@ -2,13 +2,19 @@
 
 Noted during the first build session (2026-11-12) to deal with later. Each issue's own "Known gaps" or "Not verified" section has the detail; this is the short list. Manual test steps are in [release.md](release.md).
 
-## Do first: things nobody has seen work
+## First real use (reported by Francesco, 2026-11-18)
 
-1. **The app has never been launched.** Open it and check: styles load under the content security policy, the editor (in a shadow root) is styled and typing, selection and copy/paste work, the top bar sits right under the title bar, the accent color follows the system, `<progress>` bars and radio buttons look right, Shift-Command-T toggles the transcript.
-2. **No real call has been recorded.** Three issues of capture code (002, 003, 004), the live session (009) and the app's start/stop (021) rest on one 5-second tone capture. With headphones, on a call: run `mneme-record` first (steps in `crates/mneme-audio/README.md`), then a meeting in the app.
-3. **The microphone path has never opened a real microphone.**
-4. **System audio beyond the tone test:** capture through silence, excluding Mneme's own sound, following an output device change, anything longer than 5 seconds.
-5. **Forced quit mid-meeting, then relaunch.** Recovery is tested with a killed child process only.
+Francesco launched the app, ran a meeting, and reported that it worked and felt smooth. So the app opens, first run completes, a recording starts and stops, and a meeting is saved. He chose to move forward with the two checks below still open.
+
+What that report does not tell us, because the details were not recorded: whether the meeting was a real call with another person's audio, whether both Me and Them lines appeared and were labeled correctly, whether it was launched with `pnpm tauri dev` or the built app, and which of the visual points (editor styling, transcript pane, menu bar icon, shortcut) were looked at.
+
+## Still open, to check when convenient
+
+1. **Forced quit mid-meeting, then relaunch.** The meeting should come back marked as interrupted with its transcript. Recovery is tested with a killed child process only. Not yet checked (noted 2026-11-18).
+2. **The silent error.** A failed start from the menu bar or the shortcut opens the window with no message. Not yet checked or fixed (noted 2026-11-18); see "Unfinished work".
+3. **A real call with headphones,** if the first meeting was not one: only Me in the mic lines, only the other side in the Them lines.
+4. **System audio edge cases:** capture through silence, excluding Mneme's own sound, following an output device change mid-meeting, a long meeting.
+5. **The visual checklist,** for anything not already looked at: the editor (in a shadow root) styled and typing, selection and copy/paste, the top bar under the title bar, the accent color, `<progress>` bars and radio buttons, Shift-Command-T toggling the transcript, the menu bar icon and timer.
 
 ## Open decisions for Francesco
 
