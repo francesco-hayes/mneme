@@ -1,0 +1,246 @@
+/* The button and, under it, its menu. */
+.picker {
+  position: relative;
+}
+
+/* A pop-up button: the value on the left, the two chevrons on the right. */
+.trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  width: 220px;
+  height: var(--control-height);
+  padding: 0 6px 0 var(--space-3);
+  border: var(--hairline) solid var(--color-control-border);
+  border-radius: var(--radius-control);
+  background: var(--color-control);
+  box-shadow: var(--shadow-control);
+  color: var(--color-text);
+  font-size: var(--text-body);
+  text-align: left;
+  cursor: default;
+}
+
+.trigger:active,
+.trigger[aria-expanded="true"] {
+  background: var(--color-control-pressed);
+}
+
+.trigger > svg {
+  flex: none;
+  color: var(--color-text-secondary);
+}
+
+.value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dim {
+  color: var(--color-text-secondary);
+}
+
+/* Opens under the button, its right edge on the button's. Opaque, and over
+   whatever follows on the page. */
+.menu {
+  position: absolute;
+  top: calc(100% + var(--space-1));
+  right: 0;
+  z-index: 1;
+  width: 340px;
+  padding: var(--space-1);
+  border: var(--hairline) solid var(--color-control-border);
+  border-radius: var(--radius-panel);
+  background: var(--color-popover);
+  box-shadow: var(--shadow-popover);
+}
+
+/* The menu takes the focus when a blank part of it is clicked; that needs no ring. */
+.menu:focus {
+  outline: none;
+}
+
+.groupLabel {
+  padding: var(--space-1) var(--space-2) 2px;
+  color: var(--color-text-secondary);
+  font-size: var(--text-caption);
+  font-weight: var(--weight-medium);
+}
+
+.divider {
+  margin: var(--space-1) var(--space-2);
+  border-top: var(--hairline) solid var(--color-separator);
+}
+
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  padding: 0 var(--space-1) 0 0;
+}
+
+.line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-height);
+}
+
+/* An installed model: the tick, its name and its size are one button. */
+.choice {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  height: var(--control-height);
+  padding: 0 var(--space-2) 0 0;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--color-text);
+  font-size: var(--text-body);
+  text-align: left;
+  cursor: default;
+}
+
+.choice:hover {
+  background: var(--color-hover);
+}
+
+.choice:active {
+  background: var(--color-pressed);
+}
+
+.choice[aria-checked="true"] {
+  background: var(--color-accent-soft);
+}
+
+/* The tick's column. Rows without a tick keep it, so the names line up. */
+.check {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+}
+
+.name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.size {
+  flex: none;
+  color: var(--color-text-secondary);
+  font-size: var(--text-small);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Smaller than a toolbar's icon button, to fit the row. */
+.row .delete {
+  width: var(--control-height-small);
+  height: var(--control-height-small);
+}
+
+.actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/* Under a row's line, starting where its name does: progress, an error, the
+   question before a delete. */
+.below {
+  margin: 2px 0 6px;
+  padding-left: calc(24px + var(--space-2));
+}
+
+.confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.question {
+  color: var(--color-text);
+  font-size: var(--text-small);
+}
+
+.answers {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.error {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  min-width: 0;
+  color: var(--color-danger);
+  font-size: var(--text-small);
+}
+
+.error > svg {
+  flex: none;
+  margin-top: 1px;
+}
+
+.caption {
+  padding: var(--space-1) var(--space-2);
+  color: var(--color-text-secondary);
+  font-size: var(--text-small);
+}
+
+/* A download under the Settings row, while the menu is closed. */
+.strip {
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: var(--hairline) solid var(--color-separator);
+}
+
+.stripLine {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--control-height-small);
+}
+
+.stripLabel {
+  flex: none;
+  color: var(--color-text-secondary);
+  font-size: var(--text-small);
+}
+
+.stripText {
+  flex: 1;
+}
+
+/* The bar and its words side by side here, not stacked. */
+.strip .stripProgress {
+  flex: 1;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.strip .stripProgress > progress {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+}
+
+.strip .stripProgress > span {
+  flex: none;
+  white-space: nowrap;
+}

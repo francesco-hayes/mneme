@@ -49,6 +49,23 @@ export function GearIcon() {
   );
 }
 
+/** Two chevrons, up and down: a control that opens a list of choices. */
+export function ChevronUpDownIcon() {
+  return (
+    <Icon>
+      <path d="m5 6 3-3 3 3M5 10l3 3 3-3" />
+    </Icon>
+  );
+}
+
+export function TrashIcon() {
+  return (
+    <Icon>
+      <path d="M2.75 4.25h10.5M6.25 4.25v-1.5h3.5v1.5M4 4.25l.6 8.5a1 1 0 0 0 1 .95h4.8a1 1 0 0 0 1-.95l.6-8.5M6.75 7v4M9.25 7v4" />
+    </Icon>
+  );
+}
+
 export function PlusIcon() {
   return (
     <Icon>

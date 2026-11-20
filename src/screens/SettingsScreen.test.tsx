@@ -7,11 +7,14 @@ import { advance, renderShell } from "../test/render";
 const DOWNLOAD_MS = 20 * 150;
 const VERIFY_MS = 600;
 
+/** The button that shows the model in use and opens the menu. */
+const picker = () => screen.getByRole("button", { name: /^Model / });
 const installedList = () =>
   screen.getByRole("list", { name: "Installed models" });
 const downloadList = () =>
   screen.getByRole("list", { name: "Models to download" });
-/** A model's row, wherever it is. */
+const queryList = (name: string) => screen.queryByRole("list", { name });
+/** A model's row in the open menu, wherever it is. */
 const row = (name: string) => screen.getByRole("listitem", { name });
 const names = (list: HTMLElement) =>
   within(list)
@@ -21,8 +24,10 @@ const button = (name: string | RegExp) => screen.getByRole("button", { name });
 const queryButton = (name: string | RegExp) =>
   screen.queryByRole("button", { name });
 const defaultRadio = (model: string) =>
-  screen.getByRole<HTMLInputElement>("radio", {
-    name: `Use ${model} for new meetings`,
+  screen.getByRole("radio", { name: `Use ${model} for new meetings` });
+const progressBar = (model: string) =>
+  screen.getByRole<HTMLProgressElement>("progressbar", {
+    name: `Downloading ${model}`,
   });
 const savedSettings = () => mockApi.getSettings();
 
@@ -53,13 +58,48 @@ describe("with the mock's timers", () => {
     return view;
   }
 
-  describe("the model list", () => {
-    test("shows every model: the installed one as the default, the rest to download", async () => {
+  async function openMenu() {
+    fireEvent.click(picker());
+    await advance();
+  }
+
+  /** Settings with the model menu open. */
+  async function openModels(options?: MockOptions) {
+    const view = await openSettings(options);
+    await openMenu();
+    return view;
+  }
+
+  /** Escape, pressed where the focus is. */
+  async function pressEscape() {
+    fireEvent.keyDown(document.activeElement ?? document.body, {
+      key: "Escape",
+    });
+    await advance();
+  }
+
+  describe("the model picker", () => {
+    test("closed, it is one control that shows the model new meetings use", async () => {
       await openSettings();
 
       expect(
         screen.getByRole("heading", { name: "Settings" }),
       ).toBeInTheDocument();
+      expect(picker()).toHaveTextContent("Base (English)");
+      expect(picker()).toHaveAccessibleName(
+        "Model for new meetings Base (English)",
+      );
+      expect(picker()).toHaveAttribute("aria-expanded", "false");
+      // No list of models takes up the page.
+      expect(queryList("Installed models")).toBeNull();
+      expect(queryList("Models to download")).toBeNull();
+      expect(screen.queryByRole("listitem")).toBeNull();
+    });
+
+    test("open, it has the installed model as the default and the rest to download", async () => {
+      await openModels();
+
+      expect(picker()).toHaveAttribute("aria-expanded", "true");
       expect(names(installedList())).toEqual(["Base (English)"]);
       expect(names(downloadList())).toEqual([
         "Tiny (English)",
@@ -71,9 +111,9 @@ describe("with the mock's timers", () => {
 
       const base = within(row("Base (English)"));
       expect(base.getByText("148 MB")).toBeVisible();
-      expect(base.getByText("Fast. More accurate than Tiny.")).toBeVisible();
-      expect(base.getByText("Default")).toBeVisible();
       expect(defaultRadio("Base (English)")).toBeChecked();
+      // The menu opens with the focus on the model in use.
+      expect(defaultRadio("Base (English)")).toHaveFocus();
       expect(
         base.getByRole("button", { name: "Delete Base (English)" }),
       ).toBeEnabled();
@@ -82,48 +122,80 @@ describe("with the mock's timers", () => {
       const large = within(row("Large v3"));
       expect(large.getByText("3.1 GB")).toBeVisible();
       expect(
-        large.getByText("Most accurate. Slowest and largest."),
-      ).toBeVisible();
-      expect(
         large.getByRole("button", { name: "Download Large v3" }),
       ).toBeEnabled();
-      expect(large.queryByText("Default")).toBeNull();
       expect(large.queryByRole("radio")).toBeNull();
       expect(large.queryByRole("button", { name: /Delete/ })).toBeNull();
-    });
-
-    test("marks the English-only models with a tag, and says it once", async () => {
-      await openSettings();
-
-      const tagged = screen
-        .getAllByText("English only")
-        .map((tag) => tag.closest("li")?.getAttribute("aria-labelledby"))
-        .map((id) => document.getElementById(id!)?.textContent);
-      // The installed list comes first, then the models to download.
-      expect(tagged).toEqual([
-        "Base (English)",
-        "Tiny (English)",
-        "Small (English)",
-        "Medium (English)",
-      ]);
-      // The catalog's note ends in "English only."; the tag replaces that.
-      const tiny = within(row("Tiny (English)"));
-      expect(
-        tiny.getByText("Fastest and smallest. Least accurate."),
-      ).toBeVisible();
-      expect(tiny.getByText("77.7 MB")).toBeVisible();
-      expect(screen.queryByText(/English only\./)).toBeNull();
     });
 
     test("with nothing installed it says so, and every model can be downloaded", async () => {
       await openSettings({ installedModelIds: [] });
 
+      // Said on the page, without opening anything.
       expect(screen.getByText(/No model is installed/)).toBeVisible();
-      expect(
-        screen.queryByRole("list", { name: "Installed models" }),
-      ).toBeNull();
+      expect(picker()).toHaveTextContent("No model installed");
+
+      await openMenu();
+      expect(queryList("Installed models")).toBeNull();
       expect(screen.queryByRole("radio")).toBeNull();
       expect(names(downloadList())).toHaveLength(6);
+    });
+
+    test("Escape closes it and gives the focus back to the button", async () => {
+      await openModels();
+
+      await pressEscape();
+      expect(queryList("Installed models")).toBeNull();
+      expect(picker()).toHaveAttribute("aria-expanded", "false");
+      expect(picker()).toHaveFocus();
+      // Still Settings: Escape was the menu's.
+      expect(
+        screen.getByRole("heading", { name: "Settings" }),
+      ).toBeInTheDocument();
+    });
+
+    test("a press anywhere else closes it, and so does the button", async () => {
+      await openModels();
+      fireEvent.pointerDown(screen.getByRole("heading", { name: "Settings" }));
+      await advance();
+      expect(queryList("Installed models")).toBeNull();
+
+      await openMenu();
+      // A press inside it does not.
+      fireEvent.pointerDown(row("Large v3"));
+      await advance();
+      expect(installedList()).toBeInTheDocument();
+
+      await openMenu();
+      expect(queryList("Installed models")).toBeNull();
+    });
+
+    test("the arrow keys, Home and End move between the rows", async () => {
+      await openSettings({ installedModelIds: ["base.en", "small.en"] });
+      picker().focus();
+      // Down on the closed button opens it.
+      fireEvent.keyDown(picker(), { key: "ArrowDown" });
+      await advance();
+      expect(defaultRadio("Base (English)")).toHaveFocus();
+
+      const press = (key: string) =>
+        fireEvent.keyDown(document.activeElement!, { key });
+      press("ArrowDown");
+      expect(defaultRadio("Small (English)")).toHaveFocus();
+      // On from the installed models to the ones to download.
+      press("ArrowDown");
+      expect(button("Download Tiny (English)")).toHaveFocus();
+      press("End");
+      expect(button("Download Large v3")).toHaveFocus();
+      press("ArrowDown");
+      expect(button("Download Large v3")).toHaveFocus();
+      press("ArrowUp");
+      expect(button("Download Large v3 Turbo")).toHaveFocus();
+      press("Home");
+      expect(defaultRadio("Base (English)")).toHaveFocus();
+      // Moving does not choose: the default is as it was.
+      expect(defaultRadio("Base (English)")).toBeChecked();
+      expect((await savedSettings()).defaultModelId).toBe("base.en");
     });
 
     test("says it is loading only if the read drags on", async () => {
@@ -134,7 +206,7 @@ describe("with the mock's timers", () => {
       expect(screen.getByText("Loading settings…")).toHaveClass("appears-late");
       await advance(2000);
       expect(screen.queryByText("Loading settings…")).toBeNull();
-      expect(installedList()).toBeInTheDocument();
+      expect(picker()).toHaveTextContent("Base (English)");
     });
 
     test("a failed read is shown with Retry, which reads again", async () => {
@@ -146,13 +218,13 @@ describe("with the mock's timers", () => {
       );
       await click("Retry");
       expect(screen.queryByRole("alert")).toBeNull();
-      expect(names(installedList())).toEqual(["Base (English)"]);
+      expect(picker()).toHaveTextContent("Base (English)");
     });
   });
 
   describe("downloading", () => {
     test("shows progress with received and total, then verifying, then the model is installed", async () => {
-      await openSettings();
+      await openModels();
       await click("Download Small (English)");
 
       const small = () => within(row("Small (English)"));
@@ -169,6 +241,8 @@ describe("with the mock's timers", () => {
           name: "Cancel downloading Small (English)",
         }),
       ).toBeEnabled();
+      // Shown once: in the menu's row, not also under the Settings row.
+      expect(screen.getAllByRole("progressbar")).toHaveLength(1);
 
       await advance(10 * 150);
       expect(bar()).toHaveAttribute("value", "243807110");
@@ -197,12 +271,14 @@ describe("with the mock's timers", () => {
       // A second model does not take the default away from the first.
       expect(defaultRadio("Base (English)")).toBeChecked();
       expect(defaultRadio("Small (English)")).not.toBeChecked();
+      expect(picker()).toHaveTextContent("Base (English)");
       expect((await savedSettings()).defaultModelId).toBe("base.en");
     });
 
     test("before the backend answers, the row says it is starting and cannot be cancelled yet", async () => {
       await openSettings({ latencyMs: 300 });
       await advance(300);
+      await openMenu();
       fireEvent.click(button("Download Small (English)"));
       await advance();
 
@@ -226,7 +302,7 @@ describe("with the mock's timers", () => {
     });
 
     test("Cancel stops the download and the row offers Download again", async () => {
-      await openSettings();
+      await openModels();
       await click("Download Medium (English)");
       await advance(5 * 150);
       expect(
@@ -246,7 +322,7 @@ describe("with the mock's timers", () => {
     });
 
     test("until the backend confirms a cancel, the row says it is cancelling", async () => {
-      await openSettings({ download: { cancelMs: 8000 } });
+      await openModels({ download: { cancelMs: 8000 } });
       await click("Download Medium (English)");
       await advance(5 * 150);
       await click("Cancel downloading Medium (English)");
@@ -276,7 +352,7 @@ describe("with the mock's timers", () => {
     });
 
     test("a failed download says why on its row, and Retry downloads it", async () => {
-      await openSettings();
+      await openModels();
       mockApi.mock.failNextDownload("The connection was lost.");
       await click("Download Small (English)");
       await advance(DOWNLOAD_MS);
@@ -286,7 +362,7 @@ describe("with the mock's timers", () => {
         "Could not download Small (English): The connection was lost.",
       );
       expect(small().queryByRole("progressbar")).toBeNull();
-      // Only that row is affected.
+      // Only that row is affected, and it is said once.
       expect(screen.getAllByRole("alert")).toHaveLength(1);
       expect(names(downloadList())).toContain("Small (English)");
 
@@ -302,7 +378,7 @@ describe("with the mock's timers", () => {
     });
 
     test("a failure can be dismissed instead", async () => {
-      await openSettings();
+      await openModels();
       mockApi.mock.failNextDownload();
       await click("Download Small (English)");
       await advance(DOWNLOAD_MS);
@@ -316,7 +392,7 @@ describe("with the mock's timers", () => {
     });
 
     test("a download the backend refuses to start is an error on the row", async () => {
-      await openSettings();
+      await openModels();
       mockApi.mock.failNext("downloadModel", "The models folder is read-only.");
       await click("Download Small (English)");
 
@@ -327,11 +403,57 @@ describe("with the mock's timers", () => {
       );
     });
 
+    test("with the menu closed, the download is under the Settings row, with Cancel", async () => {
+      await openModels();
+      await click("Download Small (English)");
+      await advance(10 * 150);
+      await pressEscape();
+
+      expect(screen.queryByRole("listitem")).toBeNull();
+      expect(progressBar("Small (English)")).toHaveAttribute(
+        "value",
+        "243807110",
+      );
+      expect(screen.getByText("244 MB of 488 MB")).toBeVisible();
+      expect(screen.getAllByRole("progressbar")).toHaveLength(1);
+
+      await click("Cancel downloading Small (English)");
+      expect(screen.queryByRole("progressbar")).toBeNull();
+      expect(queryButton(/Small \(English\)$/)).toBeNull();
+      expect(picker()).toHaveTextContent("Base (English)");
+    });
+
+    test("with the menu closed, a failed download says why under the Settings row, with Retry", async () => {
+      await openModels();
+      mockApi.mock.failNextDownload("The connection was lost.");
+      await click("Download Small (English)");
+      await pressEscape();
+      await advance(DOWNLOAD_MS);
+
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "Could not download Small (English): The connection was lost.",
+      );
+      expect(screen.queryByRole("progressbar")).toBeNull();
+
+      await click("Retry downloading Small (English)");
+      expect(screen.queryByRole("alert")).toBeNull();
+      expect(progressBar("Small (English)")).toHaveAttribute("value", "0");
+
+      await advance(DOWNLOAD_MS + VERIFY_MS);
+      expect(screen.queryByRole("progressbar")).toBeNull();
+      await openMenu();
+      expect(names(installedList())).toEqual([
+        "Base (English)",
+        "Small (English)",
+      ]);
+    });
+
     test("progress carries on while Settings is closed, and is there on return", async () => {
       const downloadModel = vi.spyOn(mockApi, "downloadModel");
       renderShell();
       await advance();
       await click("Settings");
+      await openMenu();
       await click("Download Small (English)");
       await advance(5 * 150);
       expect(
@@ -346,19 +468,21 @@ describe("with the mock's timers", () => {
       await advance(5 * 150);
 
       await click("Settings");
-      // Further along than when it was left, not started over.
-      expect(
-        within(row("Small (English)")).getByText("244 MB of 488 MB"),
-      ).toBeVisible();
-      expect(
-        within(row("Small (English)")).getByRole("progressbar"),
-      ).toHaveAttribute("value", "243807110");
+      // Further along than when it was left, not started over, and in sight
+      // without opening the menu.
+      expect(screen.getByText("244 MB of 488 MB")).toBeVisible();
+      expect(progressBar("Small (English)")).toHaveAttribute(
+        "value",
+        "243807110",
+      );
       expect(downloadModel).toHaveBeenCalledTimes(1);
 
       // And it can finish while the user is elsewhere.
       await click("Back");
       await advance(10 * 150 + VERIFY_MS);
       await click("Settings");
+      expect(screen.queryByRole("progressbar")).toBeNull();
+      await openMenu();
       expect(names(installedList())).toEqual([
         "Base (English)",
         "Small (English)",
@@ -370,6 +494,7 @@ describe("with the mock's timers", () => {
       renderShell();
       await advance();
       await click("Settings");
+      await openMenu();
       await click("Download Small (English)");
       await advance(5 * 150);
       await click("Cancel downloading Small (English)");
@@ -377,13 +502,12 @@ describe("with the mock's timers", () => {
       await click("Back");
       await advance(1000);
       await click("Settings");
-      expect(
-        within(row("Small (English)")).getByText("Cancelling…"),
-      ).toBeVisible();
+      expect(screen.getByText("Cancelling…")).toBeVisible();
+      expect(button("Cancel downloading Small (English)")).toBeDisabled();
     });
 
     test("two models download at the same time", async () => {
-      await openSettings();
+      await openModels();
       await click("Download Tiny (English)");
       await advance(10 * 150);
       await click("Download Large v3");
@@ -395,7 +519,14 @@ describe("with the mock's timers", () => {
       expect(within(row("Large v3")).getByText(/of 3\.1 GB$/)).toBeVisible();
       expect(screen.getAllByRole("progressbar")).toHaveLength(2);
 
+      // Closed, each has its own line under the row.
+      await pressEscape();
+      expect(progressBar("Tiny (English)")).toBeInTheDocument();
+      expect(progressBar("Large v3")).toBeInTheDocument();
+
       await advance(DOWNLOAD_MS + VERIFY_MS);
+      expect(screen.queryByRole("progressbar")).toBeNull();
+      await openMenu();
       expect(names(installedList())).toEqual([
         "Tiny (English)",
         "Base (English)",
@@ -406,7 +537,7 @@ describe("with the mock's timers", () => {
 
   describe("the default model", () => {
     test("the first model installed becomes the default by itself", async () => {
-      await openSettings({ installedModelIds: [] });
+      await openModels({ installedModelIds: [] });
       expect((await savedSettings()).defaultModelId).toBeNull();
 
       await click("Download Small (English)");
@@ -414,28 +545,43 @@ describe("with the mock's timers", () => {
 
       expect(names(installedList())).toEqual(["Small (English)"]);
       expect(defaultRadio("Small (English)")).toBeChecked();
-      expect(within(row("Small (English)")).getByText("Default")).toBeVisible();
+      expect(picker()).toHaveTextContent("Small (English)");
+      expect(screen.queryByText(/No model is installed/)).toBeNull();
       expect((await savedSettings()).defaultModelId).toBe("small.en");
     });
 
-    test("choosing another installed model saves it as the default", async () => {
-      await openSettings({ installedModelIds: ["base.en", "small.en"] });
+    test("choosing another installed model saves it as the default and closes the menu", async () => {
+      await openModels({ installedModelIds: ["base.en", "small.en"] });
       expect(defaultRadio("Base (English)")).toBeChecked();
 
       fireEvent.click(defaultRadio("Small (English)"));
       // Shown at once, before the backend has answered.
-      expect(defaultRadio("Small (English)")).toBeChecked();
+      expect(picker()).toHaveTextContent("Small (English)");
+      expect(queryList("Installed models")).toBeNull();
+      expect(picker()).toHaveFocus();
       await advance();
 
-      expect(defaultRadio("Small (English)")).toBeChecked();
-      expect(defaultRadio("Base (English)")).not.toBeChecked();
-      expect(within(row("Small (English)")).getByText("Default")).toBeVisible();
-      expect(within(row("Base (English)")).queryByText("Default")).toBeNull();
+      expect(picker()).toHaveTextContent("Small (English)");
       expect((await savedSettings()).defaultModelId).toBe("small.en");
+      await openMenu();
+      expect(defaultRadio("Small (English)")).toBeChecked();
+      expect(defaultRadio("Small (English)")).toHaveFocus();
+      expect(defaultRadio("Base (English)")).not.toBeChecked();
+    });
+
+    test("choosing the model already in use saves nothing", async () => {
+      const updateSettings = vi.spyOn(mockApi, "updateSettings");
+      await openModels({ installedModelIds: ["base.en", "small.en"] });
+
+      fireEvent.click(defaultRadio("Base (English)"));
+      await advance();
+      expect(queryList("Installed models")).toBeNull();
+      expect(picker()).toHaveTextContent("Base (English)");
+      expect(updateSettings).not.toHaveBeenCalled();
     });
 
     test("a default that cannot be saved is said in place, and the old one stays", async () => {
-      await openSettings({ installedModelIds: ["base.en", "small.en"] });
+      await openModels({ installedModelIds: ["base.en", "small.en"] });
       mockApi.mock.failNext("updateSettings", "The settings file is locked.");
 
       fireEvent.click(defaultRadio("Small (English)"));
@@ -444,15 +590,16 @@ describe("with the mock's timers", () => {
       expect(screen.getByRole("alert")).toHaveTextContent(
         "Could not change the default model: The settings file is locked.",
       );
-      expect(defaultRadio("Base (English)")).toBeChecked();
-      expect(defaultRadio("Small (English)")).not.toBeChecked();
+      expect(picker()).toHaveTextContent("Base (English)");
       expect((await savedSettings()).defaultModelId).toBe("base.en");
 
       // The next change clears the message.
+      await openMenu();
+      expect(defaultRadio("Base (English)")).toBeChecked();
       fireEvent.click(defaultRadio("Small (English)"));
       await advance();
       expect(screen.queryByRole("alert")).toBeNull();
-      expect(defaultRadio("Small (English)")).toBeChecked();
+      expect(picker()).toHaveTextContent("Small (English)");
     });
   });
 
@@ -460,7 +607,7 @@ describe("with the mock's timers", () => {
     test("Delete asks in the row first, and Keep leaves everything as it was", async () => {
       const confirm = vi.spyOn(window, "confirm");
       const deleteModel = vi.spyOn(mockApi, "deleteModel");
-      await openSettings({ installedModelIds: ["base.en", "small.en"] });
+      await openModels({ installedModelIds: ["base.en", "small.en"] });
 
       await click("Delete Small (English)");
       const question = within(row("Small (English)")).getByRole("group", {
@@ -493,8 +640,8 @@ describe("with the mock's timers", () => {
       expect(confirm).not.toHaveBeenCalled();
     });
 
-    test("Escape answers the question with no", async () => {
-      await openSettings({ installedModelIds: ["base.en", "small.en"] });
+    test("Escape answers the question with no, and the menu stays open", async () => {
+      await openModels({ installedModelIds: ["base.en", "small.en"] });
       await click("Delete Small (English)");
 
       fireEvent.keyDown(screen.getByRole("button", { name: "Keep" }), {
@@ -511,7 +658,7 @@ describe("with the mock's timers", () => {
     });
 
     test("confirming deletes the model, which can then be downloaded again", async () => {
-      await openSettings({ installedModelIds: ["base.en", "small.en"] });
+      await openModels({ installedModelIds: ["base.en", "small.en"] });
       await click("Delete Small (English)");
       fireEvent.click(
         within(row("Small (English)")).getByRole("button", { name: "Delete" }),
@@ -521,6 +668,8 @@ describe("with the mock's timers", () => {
       expect(names(installedList())).toEqual(["Base (English)"]);
       expect(names(downloadList())).toContain("Small (English)");
       expect(button("Download Small (English)")).toBeEnabled();
+      // The focus stays in the menu, on the row the model now has.
+      expect(button("Download Small (English)")).toHaveFocus();
       expect(
         (await mockApi.listModels()).find((m) => m.id === "small.en")
           ?.installed,
@@ -529,11 +678,12 @@ describe("with the mock's timers", () => {
     });
 
     test("deleting the default model moves the default to another installed model", async () => {
-      await openSettings({
+      await openModels({
         installedModelIds: ["base.en", "small.en", "medium.en"],
         settings: { defaultModelId: "small.en" },
       });
       expect(defaultRadio("Small (English)")).toBeChecked();
+      expect(picker()).toHaveTextContent("Small (English)");
 
       await click("Delete Small (English)");
       // Said before it happens.
@@ -552,13 +702,13 @@ describe("with the mock's timers", () => {
         "Medium (English)",
       ]);
       expect(defaultRadio("Base (English)")).toBeChecked();
-      expect(within(row("Base (English)")).getByText("Default")).toBeVisible();
       expect(defaultRadio("Medium (English)")).not.toBeChecked();
+      expect(picker()).toHaveTextContent("Base (English)");
       expect((await savedSettings()).defaultModelId).toBe("base.en");
     });
 
     test("deleting the only model leaves no default", async () => {
-      await openSettings();
+      await openModels();
 
       await click("Delete Base (English)");
       expect(
@@ -572,13 +722,14 @@ describe("with the mock's timers", () => {
       await advance();
 
       expect(screen.getByText(/No model is installed/)).toBeVisible();
+      expect(picker()).toHaveTextContent("No model installed");
       expect(screen.queryByRole("radio")).toBeNull();
       expect(names(downloadList())).toHaveLength(6);
       expect((await savedSettings()).defaultModelId).toBeNull();
     });
 
     test("a delete that fails says why on the row and keeps the model", async () => {
-      await openSettings({ installedModelIds: ["base.en", "small.en"] });
+      await openModels({ installedModelIds: ["base.en", "small.en"] });
       mockApi.mock.failNext("deleteModel", "The file is in use.");
 
       await click("Delete Small (English)");
@@ -602,7 +753,7 @@ describe("with the mock's timers", () => {
     test("while a recording runs, no model can be deleted", async () => {
       mockApi.mock.reset({ installedModelIds: ["base.en", "small.en"] });
       await mockApi.startMeeting();
-      await openSettings();
+      await openModels();
 
       expect(button("Delete Base (English)")).toBeDisabled();
       expect(button("Delete Small (English)")).toBeDisabled();
@@ -624,7 +775,7 @@ describe("with the mock's timers", () => {
 
     test("a recording that starts while the question is open withdraws it", async () => {
       const deleteModel = vi.spyOn(mockApi, "deleteModel");
-      await openSettings({ installedModelIds: ["base.en", "small.en"] });
+      await openModels({ installedModelIds: ["base.en", "small.en"] });
       await click("Delete Small (English)");
       expect(
         screen.getByRole("group", { name: "Delete Small (English)?" }),

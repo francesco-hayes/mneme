@@ -73,6 +73,9 @@
   /* A grouped box of settings rows. */
   --color-group: rgb(0 0 0 / 0.03);
   --color-group-border: rgb(0 0 0 / 0.07);
+  /* A menu that opens over the page. Opaque: the page must not show through. */
+  --color-popover: #ffffff;
+  --shadow-popover: 0 8px 24px rgb(0 0 0 / 0.14), 0 1px 4px rgb(0 0 0 / 0.08);
   /* Accent: macOS blue unless the browser exposes the system accent (below). */
   --color-accent: #007aff;
   --color-on-accent: #ffffff;
@@ -98,6 +101,8 @@
     --shadow-control: 0 0.5px 1px rgb(0 0 0 / 0.3);
     --color-group: rgb(255 255 255 / 0.04);
     --color-group-border: rgb(255 255 255 / 0.07);
+    --color-popover: #2c2c2c;
+    --shadow-popover: 0 8px 24px rgb(0 0 0 / 0.5), 0 1px 4px rgb(0 0 0 / 0.3);
     --color-accent: #0a84ff;
     --color-on-accent: #ffffff;
     --color-recording: #ff453a;

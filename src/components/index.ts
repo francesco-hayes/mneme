@@ -17,10 +17,12 @@ export { IconButton, type IconButtonProps } from "./IconButton";
 export {
   CheckIcon,
   ChevronLeftIcon,
+  ChevronUpDownIcon,
   GearIcon,
   PlusIcon,
   StopIcon,
   TranscriptIcon,
+  TrashIcon,
   WarningIcon,
 } from "./icons";
 export { InlineError, type InlineErrorProps } from "./InlineError";
