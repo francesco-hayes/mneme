@@ -10,9 +10,9 @@ import { isDownloadActive } from "../../lib/models";
 import { useModelLibrary } from "../../state/modelLibrary";
 import styles from "./FirstRun.module.css";
 
-// A placeholder choice until the benchmark in issue 008 is finished: a
-// mid-size multilingual model, not a measured recommendation.
-export const RECOMMENDED_MODEL_ID = "small";
+// A placeholder choice until the benchmark in issue 008 is finished: the
+// mid-size English model, not a measured recommendation.
+export const RECOMMENDED_MODEL_ID = "small.en";
 
 /**
  * Step 1: pick a model and download it. The recommended model is selected to

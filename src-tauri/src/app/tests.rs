@@ -240,6 +240,7 @@ fn spec(id: &str) -> ModelSpec {
         size_bytes: 4,
         sha256: "0".repeat(64),
         english_only: true,
+        retired: false,
         note: String::new(),
     }
 }

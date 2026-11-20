@@ -15,7 +15,7 @@ use super::download::{
 };
 use super::error::ModelError;
 
-/// A catalog entry and whether it is installed. Field for field the
+/// A listed catalog entry and whether it is installed. Field for field the
 /// frontend's `ModelInfo`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModelInfo {
@@ -128,18 +128,25 @@ impl ModelStore {
             .ok_or_else(|| ModelError::UnknownModel { id: id.to_owned() })
     }
 
-    /// Every catalog entry, in catalog order, with its installed flag.
+    /// The models to show, in catalog order, with their installed flags:
+    /// every catalog entry that is not [retired](ModelSpec::retired), and
+    /// each retired one that is installed. A retired model that was
+    /// downloaded while it was offered so stays usable and deletable, and
+    /// leaves the list once it is deleted.
     pub fn list(&self) -> Vec<ModelInfo> {
         self.inner
             .catalog
             .iter()
-            .map(|spec| ModelInfo {
-                id: spec.id.clone(),
-                name: spec.name.clone(),
-                size_bytes: spec.size_bytes,
-                note: spec.note.clone(),
-                english_only: spec.english_only,
-                installed: self.spec_is_installed(spec),
+            .filter_map(|spec| {
+                let installed = self.spec_is_installed(spec);
+                (installed || !spec.retired).then(|| ModelInfo {
+                    id: spec.id.clone(),
+                    name: spec.name.clone(),
+                    size_bytes: spec.size_bytes,
+                    note: spec.note.clone(),
+                    english_only: spec.english_only,
+                    installed,
+                })
             })
             .collect()
     }

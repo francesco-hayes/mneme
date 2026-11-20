@@ -5,7 +5,11 @@ import {
   mockScenarios,
   type MockOptions,
 } from "./mock";
-import { generateTranscript, MOCK_MODEL_CATALOG } from "./mockSeed";
+import {
+  generateTranscript,
+  MOCK_MODEL_CATALOG,
+  MOCK_RETIRED_MODEL_IDS,
+} from "./mockSeed";
 import type { DownloadProgress, RecordingState } from "./types";
 
 const NOW = new Date(2026, 10, 12, 15, 0, 0); // Nov 12 2026, 3:00 PM local time
@@ -283,24 +287,20 @@ describe("recording", () => {
 });
 
 describe("models and downloads", () => {
-  test("the catalog is the real one: ten models, smallest first, four English-only", async () => {
+  test("the models offered are the real ones: six, smallest first, four English-only", async () => {
     const models = await create().listModels();
 
     expect(models.map((m) => m.id)).toEqual([
-      "tiny",
       "tiny.en",
-      "base",
       "base.en",
-      "small",
       "small.en",
-      "medium",
       "medium.en",
       "large-v3-turbo",
       "large-v3",
     ]);
     const sizes = models.map((m) => m.sizeBytes);
     expect(sizes).toEqual([...sizes].sort((a, b) => a - b));
-    expect(sizes[0]).toBe(77_691_713);
+    expect(sizes[0]).toBe(77_704_715);
     expect(sizes.at(-1)).toBe(3_095_033_483);
     expect(models.filter((m) => m.englishOnly).map((m) => m.id)).toEqual([
       "tiny.en",
@@ -313,10 +313,43 @@ describe("models and downloads", () => {
     );
   });
 
-  test("the catalog has one model installed by default, and none on request", async () => {
+  test("a retired model is listed only while it is installed", async () => {
+    // The multilingual Tiny, Base, Small and Medium are no longer offered.
+    const api = create({ installedModelIds: ["small", "base.en"] });
+    const ids = async () => (await api.listModels()).map((m) => m.id);
+    expect(MOCK_MODEL_CATALOG).toHaveLength(10);
+    expect([...MOCK_RETIRED_MODEL_IDS]).toEqual([
+      "tiny",
+      "base",
+      "small",
+      "medium",
+    ]);
+
+    // One downloaded while it was offered is still there, in catalog order.
+    expect(await ids()).toEqual([
+      "tiny.en",
+      "base.en",
+      "small",
+      "small.en",
+      "medium.en",
+      "large-v3-turbo",
+      "large-v3",
+    ]);
+    await api.updateSettings({ defaultModelId: "small" });
+    expect((await api.getSettings()).defaultModelId).toBe("small");
+
+    // Deleting it takes it off the list.
+    await api.deleteModel("small");
+    expect(await ids()).not.toContain("small");
+    expect(await ids()).toHaveLength(6);
+  });
+
+  test("the list has one model installed by default, and none on request", async () => {
     const one = await create().listModels();
-    expect(one).toHaveLength(MOCK_MODEL_CATALOG.length);
-    expect(one.filter((m) => m.installed).map((m) => m.id)).toEqual(["base"]);
+    expect(one).toHaveLength(6);
+    expect(one.filter((m) => m.installed).map((m) => m.id)).toEqual([
+      "base.en",
+    ]);
     expect(one.some((m) => m.englishOnly)).toBe(true);
     expect(one.some((m) => !m.englishOnly)).toBe(true);
 
@@ -332,21 +365,23 @@ describe("models and downloads", () => {
     expect((await api.listModels()).some((m) => m.installed)).toBe(false);
     expect((await api.getSettings()).defaultModelId).toBeNull();
 
-    api.mock.setInstalledModels(["small"]);
+    api.mock.setInstalledModels(["small.en"]);
     const installed = (await api.listModels()).filter((m) => m.installed);
-    expect(installed.map((m) => m.id)).toEqual(["small"]);
+    expect(installed.map((m) => m.id)).toEqual(["small.en"]);
   });
 
   test("a download reports downloading, then verifying, then done, and installs the model", async () => {
     const api = create();
     const events: DownloadProgress[] = [];
     api.onDownloadProgress((p) => events.push(p));
-    const total = MOCK_MODEL_CATALOG.find((m) => m.id === "small")!.sizeBytes;
+    const total = MOCK_MODEL_CATALOG.find(
+      (m) => m.id === "small.en",
+    )!.sizeBytes;
 
-    await api.downloadModel("small");
+    await api.downloadModel("small.en");
     expect(events).toEqual([
       {
-        modelId: "small",
+        modelId: "small.en",
         receivedBytes: 0,
         totalBytes: total,
         state: "downloading",
@@ -355,7 +390,7 @@ describe("models and downloads", () => {
 
     await vi.advanceTimersByTimeAsync(20 * 150);
     expect(events.at(-1)).toEqual({
-      modelId: "small",
+      modelId: "small.en",
       receivedBytes: total,
       totalBytes: total,
       state: "verifying",
@@ -366,17 +401,17 @@ describe("models and downloads", () => {
     const received = events.map((e) => e.receivedBytes);
     expect(received).toEqual([...received].sort((a, b) => a - b));
     expect(
-      (await api.listModels()).find((m) => m.id === "small")?.installed,
+      (await api.listModels()).find((m) => m.id === "small.en")?.installed,
     ).toBe(false);
 
     await vi.advanceTimersByTimeAsync(600);
     expect(events.at(-1)?.state).toBe("done");
     expect(events.filter((e) => e.state === "done")).toHaveLength(1);
     expect(
-      (await api.listModels()).find((m) => m.id === "small")?.installed,
+      (await api.listModels()).find((m) => m.id === "small.en")?.installed,
     ).toBe(true);
     // Installing does not change the default model.
-    expect((await api.getSettings()).defaultModelId).toBe("base");
+    expect((await api.getSettings()).defaultModelId).toBe("base.en");
   });
 
   test("cancelling stops the download and installs nothing", async () => {
@@ -384,9 +419,9 @@ describe("models and downloads", () => {
     const events: DownloadProgress[] = [];
     api.onDownloadProgress((p) => events.push(p));
 
-    await api.downloadModel("medium");
+    await api.downloadModel("medium.en");
     await vi.advanceTimersByTimeAsync(5 * 150);
-    await api.cancelDownload("medium");
+    await api.cancelDownload("medium.en");
 
     const last = events.at(-1)!;
     expect(last.state).toBe("cancelled");
@@ -397,12 +432,12 @@ describe("models and downloads", () => {
     await vi.advanceTimersByTimeAsync(10_000);
     expect(events).toHaveLength(count);
     expect(
-      (await api.listModels()).find((m) => m.id === "medium")?.installed,
+      (await api.listModels()).find((m) => m.id === "medium.en")?.installed,
     ).toBe(false);
 
     // Cancelling when nothing is downloading does nothing, and a retry works.
-    await api.cancelDownload("medium");
-    await api.downloadModel("medium");
+    await api.cancelDownload("medium.en");
+    await api.downloadModel("medium.en");
     expect(events.at(-1)?.state).toBe("downloading");
   });
 
@@ -411,31 +446,31 @@ describe("models and downloads", () => {
     const events: DownloadProgress[] = [];
     api.onDownloadProgress((p) => events.push(p));
 
-    await api.downloadModel("medium");
+    await api.downloadModel("medium.en");
     await vi.advanceTimersByTimeAsync(5 * 150);
     const before = events.length;
-    await api.cancelDownload("medium");
+    await api.cancelDownload("medium.en");
 
     // The call has returned; the download has stopped but has not said so.
     expect(events).toHaveLength(before);
     await vi.advanceTimersByTimeAsync(2999);
     expect(events).toHaveLength(before);
-    await expect(api.downloadModel("medium")).rejects.toThrow(
+    await expect(api.downloadModel("medium.en")).rejects.toThrow(
       "already downloading",
     );
     // A second cancel changes nothing.
-    await api.cancelDownload("medium");
+    await api.cancelDownload("medium.en");
 
     await vi.advanceTimersByTimeAsync(1);
     expect(events).toHaveLength(before + 1);
     expect(events.at(-1)).toMatchObject({
-      modelId: "medium",
+      modelId: "medium.en",
       state: "cancelled",
     });
     expect(
-      (await api.listModels()).find((m) => m.id === "medium")?.installed,
+      (await api.listModels()).find((m) => m.id === "medium.en")?.installed,
     ).toBe(false);
-    await api.downloadModel("medium");
+    await api.downloadModel("medium.en");
     expect(events.at(-1)?.state).toBe("downloading");
   });
 
@@ -468,11 +503,11 @@ describe("models and downloads", () => {
   test("a download is refused for an unknown, installed or already downloading model", async () => {
     const api = create();
     await expect(api.downloadModel("nope")).rejects.toThrow("Unknown model");
-    await expect(api.downloadModel("base")).rejects.toThrow(
+    await expect(api.downloadModel("base.en")).rejects.toThrow(
       "already installed",
     );
-    await api.downloadModel("small");
-    await expect(api.downloadModel("small")).rejects.toThrow(
+    await api.downloadModel("small.en");
+    await expect(api.downloadModel("small.en")).rejects.toThrow(
       "already downloading",
     );
   });
@@ -482,38 +517,38 @@ describe("models and downloads", () => {
     const events: DownloadProgress[] = [];
     api.onDownloadProgress((p) => events.push(p));
 
-    await api.downloadModel("small");
-    await api.downloadModel("medium");
+    await api.downloadModel("small.en");
+    await api.downloadModel("medium.en");
     await vi.advanceTimersByTimeAsync(10_000);
 
     const done = events.filter((e) => e.state === "done").map((e) => e.modelId);
-    expect(done.sort()).toEqual(["medium", "small"]);
+    expect(done.sort()).toEqual(["medium.en", "small.en"]);
   });
 
   test("deleting removes the model, clears it as default, and is refused during its recording", async () => {
-    const api = create({ installedModelIds: ["base", "small"] });
-    await api.updateSettings({ defaultModelId: "small" });
+    const api = create({ installedModelIds: ["base.en", "small.en"] });
+    await api.updateSettings({ defaultModelId: "small.en" });
 
     await api.startMeeting();
-    await expect(api.deleteModel("small")).rejects.toThrow("in use");
-    await api.deleteModel("base");
+    await expect(api.deleteModel("small.en")).rejects.toThrow("in use");
+    await api.deleteModel("base.en");
 
     await vi.advanceTimersByTimeAsync(1000);
     const stopping = api.stopMeeting();
     await vi.advanceTimersByTimeAsync(600);
     await stopping;
 
-    await api.deleteModel("small");
+    await api.deleteModel("small.en");
     expect((await api.listModels()).some((m) => m.installed)).toBe(false);
     expect((await api.getSettings()).defaultModelId).toBeNull();
-    await expect(api.deleteModel("small")).rejects.toThrow("not installed");
+    await expect(api.deleteModel("small.en")).rejects.toThrow("not installed");
   });
 });
 
 describe("settings and permissions", () => {
   test("settings start with the installed model, automatic language and no shortcut", async () => {
     expect(await create().getSettings()).toEqual({
-      defaultModelId: "base",
+      defaultModelId: "base.en",
       language: "auto",
       globalShortcut: null,
     });
@@ -526,16 +561,16 @@ describe("settings and permissions", () => {
       globalShortcut: "CommandOrControl+Shift+R",
     });
     expect(updated).toEqual({
-      defaultModelId: "base",
+      defaultModelId: "base.en",
       language: "pt",
       globalShortcut: "CommandOrControl+Shift+R",
     });
     expect(await api.getSettings()).toEqual(updated);
 
     await expect(
-      api.updateSettings({ defaultModelId: "medium" }),
+      api.updateSettings({ defaultModelId: "medium.en" }),
     ).rejects.toThrow("not installed");
-    expect((await api.getSettings()).defaultModelId).toBe("base");
+    expect((await api.getSettings()).defaultModelId).toBe("base.en");
   });
 
   test("an undetermined permission takes the prompt's answer; a denied one stays denied", async () => {
@@ -582,7 +617,7 @@ describe("controls", () => {
     api.onDownloadProgress((p) => events.push(p));
 
     await api.startMeeting();
-    await api.downloadModel("small");
+    await api.downloadModel("small.en");
     await api.saveNotes("mtg-standup", "changed");
     api.mock.reset({ now: () => NOW, installedModelIds: [] });
 

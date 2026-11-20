@@ -54,7 +54,7 @@ async function openApp(options: MockOptions = {}) {
 async function openPermissions(permissions: MockOptions["permissions"]) {
   mockApi.mock.reset({
     ...mockScenarios["first-run"],
-    installedModelIds: ["small"],
+    installedModelIds: ["small.en"],
     permissions,
   });
   const view = renderShell({ route: { name: "first-run" } });
@@ -71,11 +71,13 @@ describe("step 1: the model", () => {
     expect(heading("Meetings")).toBeNull();
     expect(screen.getByText(/on this Mac, and needs a model/)).toBeVisible();
 
-    expect(rowNames()).toEqual(["Small"]);
-    expect(modelRadio("Small")).toBeChecked();
-    expect(within(row("Small")).getByText("Recommended")).toBeVisible();
-    expect(within(row("Small")).getByText("488 MB")).toBeVisible();
-    expect(button("Download Small")).toBeEnabled();
+    expect(rowNames()).toEqual(["Small (English)"]);
+    expect(modelRadio("Small (English)")).toBeChecked();
+    expect(
+      within(row("Small (English)")).getByText("Recommended"),
+    ).toBeVisible();
+    expect(within(row("Small (English)")).getByText("488 MB")).toBeVisible();
+    expect(button("Download Small (English)")).toBeEnabled();
 
     expect(
       screen.getByText(
@@ -89,44 +91,40 @@ describe("step 1: the model", () => {
     await click("Show all models");
 
     expect(rowNames()).toEqual([
-      "Tiny",
       "Tiny (English)",
-      "Base",
       "Base (English)",
-      "Small",
       "Small (English)",
-      "Medium",
       "Medium (English)",
       "Large v3 Turbo",
       "Large v3",
     ]);
-    const base = within(row("Base"));
+    const base = within(row("Base (English)"));
     expect(base.getByText("148 MB")).toBeVisible();
     expect(base.getByText("Fast. More accurate than Tiny.")).toBeVisible();
     expect(base.queryByText("Recommended")).toBeNull();
     // Still the recommended one until another is picked.
-    expect(modelRadio("Small")).toBeChecked();
+    expect(modelRadio("Small (English)")).toBeChecked();
 
-    fireEvent.click(modelRadio("Base"));
-    expect(modelRadio("Base")).toBeChecked();
-    expect(button("Download Base")).toBeEnabled();
-    expect(queryButton("Download Small")).toBeNull();
+    fireEvent.click(modelRadio("Base (English)"));
+    expect(modelRadio("Base (English)")).toBeChecked();
+    expect(button("Download Base (English)")).toBeEnabled();
+    expect(queryButton("Download Small (English)")).toBeNull();
   });
 
   test("downloading shows progress, then verifying, then the permissions step, with the model as the default", async () => {
     const { container } = await openApp();
     expect(await defaultModelId()).toBeNull();
 
-    await click("Download Small");
+    await click("Download Small (English)");
     await advance(DOWNLOAD_MS / 2);
 
-    const small = within(row("Small"));
+    const small = within(row("Small (English)"));
     expect(
-      small.getByRole("progressbar", { name: "Downloading Small" }),
+      small.getByRole("progressbar", { name: "Downloading Small (English)" }),
     ).toBeVisible();
     expect(small.getByText("244 MB of 488 MB")).toBeVisible();
-    expect(queryButton("Download Small")).toBeNull();
-    expect(modelRadio("Small")).toBeDisabled();
+    expect(queryButton("Download Small (English)")).toBeNull();
+    expect(modelRadio("Small (English)")).toBeDisabled();
     expect(heading("Allow recording")).toBeNull();
 
     await advance(DOWNLOAD_MS / 2);
@@ -136,8 +134,8 @@ describe("step 1: the model", () => {
     await advance(VERIFY_MS);
     expect(heading("Allow recording")).toBeInTheDocument();
     expect(heading("Choose a transcription model")).toBeNull();
-    expect(screen.getByText(/^Small is installed\./)).toBeVisible();
-    expect(await defaultModelId()).toBe("small");
+    expect(screen.getByText(/^Small \(English\) is installed\./)).toBeVisible();
+    expect(await defaultModelId()).toBe("small.en");
 
     // The app's policy is `style-src 'self'`.
     expect(container.querySelector("[style]")).toBeNull();
@@ -147,24 +145,24 @@ describe("step 1: the model", () => {
   test("a model other than the recommended one can be downloaded, and becomes the default", async () => {
     await openApp();
     await click("Show all models");
-    fireEvent.click(modelRadio("Tiny"));
-    await click("Download Tiny");
+    fireEvent.click(modelRadio("Tiny (English)"));
+    await click("Download Tiny (English)");
     await advance(DOWNLOAD_MS + VERIFY_MS);
 
     expect(heading("Allow recording")).toBeInTheDocument();
-    expect(await defaultModelId()).toBe("tiny");
+    expect(await defaultModelId()).toBe("tiny.en");
   });
 
   test("Cancel stops the download and leaves the choice open", async () => {
     await openApp();
-    await click("Download Small");
+    await click("Download Small (English)");
     await advance(DOWNLOAD_MS / 2);
 
-    await click("Cancel downloading Small");
+    await click("Cancel downloading Small (English)");
 
     expect(screen.queryByRole("progressbar")).toBeNull();
-    expect(button("Download Small")).toBeEnabled();
-    expect(modelRadio("Small")).toBeEnabled();
+    expect(button("Download Small (English)")).toBeEnabled();
+    expect(modelRadio("Small (English)")).toBeEnabled();
     await advance(DOWNLOAD_MS + VERIFY_MS);
     expect(heading("Allow recording")).toBeNull();
     expect(await defaultModelId()).toBeNull();
@@ -173,44 +171,44 @@ describe("step 1: the model", () => {
   test("a failed download says why, and Retry downloads it", async () => {
     await openApp();
     mockApi.mock.failNextDownload("The connection was lost.");
-    await click("Download Small");
+    await click("Download Small (English)");
     await advance(DOWNLOAD_MS);
 
-    expect(within(row("Small")).getByRole("alert")).toHaveTextContent(
-      "Could not download Small: The connection was lost.",
+    expect(within(row("Small (English)")).getByRole("alert")).toHaveTextContent(
+      "Could not download Small (English): The connection was lost.",
     );
     expect(heading("Allow recording")).toBeNull();
     expect(await defaultModelId()).toBeNull();
 
-    await click("Retry downloading Small");
+    await click("Retry downloading Small (English)");
     expect(screen.queryByRole("alert")).toBeNull();
     await advance(DOWNLOAD_MS + VERIFY_MS);
 
     expect(heading("Allow recording")).toBeInTheDocument();
-    expect(await defaultModelId()).toBe("small");
+    expect(await defaultModelId()).toBe("small.en");
   });
 
   test("the permissions step waits until the model has been saved as the default", async () => {
     await openApp();
-    await click("Download Small");
+    await click("Download Small (English)");
     mockApi.mock.failNext("updateSettings", "The settings file is locked.");
     await advance(DOWNLOAD_MS + VERIFY_MS);
 
     expect(heading("Allow recording")).toBeNull();
-    expect(within(row("Small")).getByText("Installed")).toBeVisible();
+    expect(within(row("Small (English)")).getByText("Installed")).toBeVisible();
     expect(screen.getByRole("alert")).toHaveTextContent(
       "Could not set the default model: The settings file is locked.",
     );
-    expect(queryButton("Download Small")).toBeNull();
+    expect(queryButton("Download Small (English)")).toBeNull();
 
     await click("Retry");
     expect(heading("Allow recording")).toBeInTheDocument();
-    expect(await defaultModelId()).toBe("small");
+    expect(await defaultModelId()).toBe("small.en");
   });
 
   test("quitting during a download and opening the app again starts First run afresh", async () => {
     const first = await openApp();
-    await click("Download Small");
+    await click("Download Small (English)");
     await advance(DOWNLOAD_MS / 2);
     first.unmount();
 
@@ -219,7 +217,7 @@ describe("step 1: the model", () => {
 
     expect(heading("Choose a transcription model")).toBeInTheDocument();
     expect(screen.queryByRole("progressbar")).toBeNull();
-    expect(button("Download Small")).toBeEnabled();
+    expect(button("Download Small (English)")).toBeEnabled();
   });
 });
 
@@ -287,7 +285,7 @@ describe("step 2: permissions", () => {
   test("answering no to the prompt shows the permission as denied", async () => {
     mockApi.mock.reset({
       ...mockScenarios["first-run"],
-      installedModelIds: ["small"],
+      installedModelIds: ["small.en"],
       permissionResponses: { microphone: "denied" },
     });
     renderShell({ route: { name: "first-run" } });
@@ -351,7 +349,7 @@ describe("step 2: permissions", () => {
   test("a failure to read the permissions is shown, and Retry reads them", async () => {
     mockApi.mock.reset({
       ...mockScenarios["first-run"],
-      installedModelIds: ["small"],
+      installedModelIds: ["small.en"],
     });
     mockApi.mock.failNext(
       "getPermissions",
@@ -371,7 +369,7 @@ describe("step 2: permissions", () => {
 test("the whole of first run: download, allow, Finish, and Home opens with the model as the default", async () => {
   await openApp();
 
-  await click("Download Small");
+  await click("Download Small (English)");
   await advance(DOWNLOAD_MS + VERIFY_MS);
   await click("Allow the microphone");
   await click("Allow system audio");
@@ -381,8 +379,8 @@ test("the whole of first run: download, allow, Finish, and Home opens with the m
   expect(heading("Welcome to Mneme")).toBeNull();
   // First run is not a screen to go back to.
   expect(queryButton("Back")).toBeNull();
-  expect(await defaultModelId()).toBe("small");
+  expect(await defaultModelId()).toBe("small.en");
   expect(
     (await mockApi.listModels()).filter((model) => model.installed),
-  ).toMatchObject([{ id: "small" }]);
+  ).toMatchObject([{ id: "small.en" }]);
 });

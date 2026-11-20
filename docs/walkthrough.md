@@ -56,7 +56,7 @@ Four things every crate agrees on: `SAMPLE_RATE` (16,000), `Speaker` (`Me`, `The
 
 - `Transcriber` is the trait; `WhisperEngine` implements it with whisper-rs and Metal; `FakeTranscriber` is for tests.
 - `Chunker` detects speech by loudness against an adaptive noise floor, cuts after 700 ms of pause, and force-cuts at 28 s.
-- `catalog()` lists ten Whisper models with sizes and SHA-256 values read from Hugging Face at a pinned revision. `ModelStore` downloads to a `.part` file, verifies, then renames.
+- `catalog()` lists ten Whisper models with sizes and SHA-256 values read from Hugging Face at a pinned revision. The app offers six of them: v1 is English only, so the multilingual Tiny, Base, Small and Medium are retired and listed only where already installed. `ModelStore` downloads to a `.part` file, verifies, then renames.
 - This crate holds the only code in the app allowed to use the network.
 
 ### mneme-store

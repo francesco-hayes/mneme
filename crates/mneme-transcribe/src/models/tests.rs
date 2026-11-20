@@ -66,6 +66,7 @@ fn spec_for(id: &str, url: String, body: &[u8]) -> ModelSpec {
         size_bytes: body.len() as u64,
         sha256: sha256_hex(body),
         english_only: false,
+        retired: false,
         note: "A test file.".to_owned(),
     }
 }

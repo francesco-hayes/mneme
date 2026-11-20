@@ -22,6 +22,9 @@ export interface MockMeetingSeed {
  * `crates/mneme-transcribe/src/models/catalog.rs`. Ids, names, sizes and notes
  * are copied from it; `englishOnly` is true for the `.en` models. Keep the two
  * in step by hand when the real catalog changes.
+ *
+ * Four of the ten are retired (`MOCK_RETIRED_MODEL_IDS`): like the real
+ * backend, `listModels` leaves those out unless they are installed.
  */
 export const MOCK_MODEL_CATALOG: readonly Omit<ModelInfo, "installed">[] = [
   {
@@ -96,8 +99,20 @@ export const MOCK_MODEL_CATALOG: readonly Omit<ModelInfo, "installed">[] = [
   },
 ];
 
+/**
+ * The models the app no longer offers: the multilingual Tiny, Base, Small and
+ * Medium, as `retired` marks them in the real catalog. The app is English
+ * only, so it offers the `.en` model of each of those sizes instead.
+ */
+export const MOCK_RETIRED_MODEL_IDS: ReadonlySet<string> = new Set([
+  "tiny",
+  "base",
+  "small",
+  "medium",
+]);
+
 /** The model the default seed has installed. */
-export const DEFAULT_INSTALLED_MODEL_ID = "base";
+export const DEFAULT_INSTALLED_MODEL_ID = "base.en";
 
 const MONTHS = [
   "Jan",

@@ -25,8 +25,7 @@ What that report does not tell us, because the details were not recorded: whethe
 | Reading the system-audio permission                               | Keep "unknown" (public API only) or enable the private-API feature (rules out the App Store) | 003, 024  |
 | Spellcheck and autocorrect in the editor                          | Off today (CodeMirror's default); a one-line change                                          | 017       |
 | Speaker bleed without headphones                                  | Recommend headphones (today) or add echo cancellation                                        | scope doc |
-| Which models to list                                              | All ten today; five are multilingual and v1 is English only                                  | 007, 019  |
-| First-run recommended model                                       | `small` is a placeholder until the benchmark is done                                         | 008, 020  |
+| First-run recommended model                                       | `small.en` is a placeholder until the benchmark is done                                      | 008, 020  |
 | A meetings folder synced from another Mac                         | Recovery assumes one running copy per folder                                                 | 013       |
 | Hiding a transcript's last line when its final newline is missing | Follows the crash-detection rule; one-place change to relax                                  | 011       |
 

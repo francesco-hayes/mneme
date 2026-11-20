@@ -105,7 +105,7 @@ import { mockApi, mockScenarios } from "./lib/api/mock";
 
 mockApi.mock.reset({ installedModelIds: [] }); // no model installed
 mockApi.mock.reset(mockScenarios["first-run"]); // or a named scenario
-mockApi.mock.setInstalledModels(["base"]); // switch without resetting
+mockApi.mock.setInstalledModels(["base.en"]); // switch without resetting
 mockApi.mock.setPermission("microphone", "denied");
 mockApi.mock.failNext("saveNotes", "Disk full."); // the next call rejects
 mockApi.mock.failNextDownload(); // the next download ends in `error`

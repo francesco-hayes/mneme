@@ -19,6 +19,7 @@ import {
   meetingFolderName,
   MOCK_MEETINGS_ROOT,
   MOCK_MODEL_CATALOG,
+  MOCK_RETIRED_MODEL_IDS,
   type MockMeetingSeed,
   scriptedLine,
   seedMeetings,
@@ -544,7 +545,11 @@ export function createMockApi(initialOptions: MockOptions = {}): MockApi {
 
     listModels: () =>
       call("listModels", () =>
-        MOCK_MODEL_CATALOG.map((model): ModelInfo => ({
+        // A retired model is listed only while it is installed.
+        MOCK_MODEL_CATALOG.filter(
+          (model) =>
+            installed.has(model.id) || !MOCK_RETIRED_MODEL_IDS.has(model.id),
+        ).map((model): ModelInfo => ({
           ...model,
           installed: installed.has(model.id),
         })),

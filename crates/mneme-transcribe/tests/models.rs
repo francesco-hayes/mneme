@@ -23,6 +23,7 @@ fn test_catalog() -> Vec<ModelSpec> {
         size_bytes,
         sha256: "0".repeat(64),
         english_only: id.ends_with(".en"),
+        retired: false,
         note: format!("Note for {id}."),
     };
     vec![entry("one", 10), entry("two.en", 20), entry("three", 30)]
@@ -117,6 +118,32 @@ fn the_catalog_covers_the_standard_sizes() {
     );
     assert_eq!(find_model("large"), None);
 
+    // The app is English only, so it offers one model per size: the `.en`
+    // variant where there is one. The multilingual ones are retired.
+    let ids_where = |retired: bool| -> Vec<&str> {
+        catalog()
+            .iter()
+            .filter(|m| m.retired == retired)
+            .map(|m| m.id.as_str())
+            .collect()
+    };
+    assert_eq!(
+        ids_where(false),
+        [
+            "tiny.en",
+            "base.en",
+            "small.en",
+            "medium.en",
+            "large-v3-turbo",
+            "large-v3",
+        ]
+    );
+    assert_eq!(ids_where(true), ["tiny", "base", "small", "medium"]);
+    for model in catalog().iter().filter(|m| m.retired) {
+        let english = find_model(&format!("{}.en", model.id));
+        assert!(english.is_some_and(|m| !m.retired), "{}", model.id);
+    }
+
     // The entry issue 005 downloaded and hashed on this machine.
     let tiny_en = find_model("tiny.en").unwrap();
     assert_eq!(tiny_en.name, "Tiny (English)");
@@ -136,8 +163,9 @@ fn a_new_store_creates_its_folder_and_lists_nothing_installed() {
     assert!(dir.is_dir());
     assert_eq!(store.dir(), dir);
     let listed = store.list();
-    assert_eq!(listed.len(), catalog().len());
-    for (info, spec) in listed.iter().zip(catalog()) {
+    let offered: Vec<&ModelSpec> = catalog().iter().filter(|spec| !spec.retired).collect();
+    assert_eq!(listed.len(), offered.len());
+    for (info, spec) in listed.iter().zip(offered) {
         assert_eq!(info.id, spec.id);
         assert_eq!(info.name, spec.name);
         assert_eq!(info.size_bytes, spec.size_bytes);
@@ -197,6 +225,43 @@ fn list_marks_a_model_installed_only_by_its_final_name_and_size() {
     assert_eq!(listed[1].note, "Note for two.en.");
     assert!(listed[1].english_only);
     assert!(!listed[0].english_only);
+}
+
+#[test]
+fn a_retired_model_is_listed_only_while_it_is_installed() {
+    let dir = TempDir::new().unwrap();
+    let mut catalog = test_catalog();
+    catalog[0].retired = true;
+    let store = ModelStore::open_with_catalog(dir.path(), catalog).unwrap();
+    let listed = |store: &ModelStore| -> Vec<(String, bool)> {
+        store
+            .list()
+            .into_iter()
+            .map(|model| (model.id, model.installed))
+            .collect()
+    };
+    let row = |id: &str, installed: bool| (id.to_owned(), installed);
+
+    // Not installed: not offered, though the store still knows the model.
+    assert_eq!(listed(&store), [row("two.en", false), row("three", false)]);
+    assert_eq!(store.spec("one").unwrap().name, "Test one");
+    assert!(!store.is_installed("one"));
+
+    // A copy downloaded while the model was offered: listed in its catalog
+    // place, and usable.
+    write_file(&dir.path().join("ggml-one.bin"), 10);
+    assert_eq!(
+        listed(&store),
+        [row("one", true), row("two.en", false), row("three", false)]
+    );
+    assert_eq!(
+        store.installed_path("one").unwrap(),
+        dir.path().join("ggml-one.bin")
+    );
+
+    // Deleting it takes it off the list for good.
+    store.delete("one").unwrap();
+    assert_eq!(listed(&store), [row("two.en", false), row("three", false)]);
 }
 
 #[test]
