@@ -73,34 +73,31 @@ codesign -d -r- target/debug/bundle/macos/Mneme.app            # requirement nam
 
 ## GitHub release
 
-Pushing a version tag builds the Mac app and puts it in a draft release on GitHub. You write the notes and publish the draft, so the release is never public without its download. This needs no Apple account and no secrets. The workflow is `.github/workflows/release.yml`.
+A new version on `main` builds the Mac app and puts it in a draft release on GitHub. You write the notes and publish the draft, so the release is never public without its download. There is no tag to make by hand. This needs no Apple account and no secrets. The workflow is `.github/workflows/release.yml`.
+
+![Releasing a new version: set the version, push to main, GitHub checks it is new, builds the app, makes a draft release, you publish it](release-flow.svg)
 
 ### Make one
 
-1. Set the version in two places, the same in both: `version` under `[workspace.package]` in `Cargo.toml`, and `version` in `package.json`. Commit and push.
-2. Tag that commit with the version and push the tag:
-
-   ```sh
-   git tag v0.2.0
-   git push origin v0.2.0
-   ```
-
-   The tag must start with `v` for the workflow to run.
-
-3. The Release workflow starts (Actions tab) and takes about 15–25 minutes. When it finishes, there is a draft release named "Mneme 0.2.0" on the Releases page with three files:
+1. Set the new version: `pnpm bump 0.2.0`. It writes the version to `Cargo.toml` (`[workspace.package]`), `package.json` and the workspace crates in `Cargo.lock`.
+2. Commit and push to `main`, or merge a pull request into it.
+3. The Release workflow starts (Actions tab). Its first job checks whether `v0.2.0` is already tagged or released. If it is, the run stops there in a few seconds, which is what happens on every push that does not change the version.
+4. For a new version it builds the app, about 15–25 minutes, then tags the commit `v0.2.0` and creates a draft release named "Mneme 0.2.0" with three files:
    - `Mneme-<version>-macos-arm64.dmg`, the download for most people
    - `Mneme-<version>-macos-arm64.zip`, the same app zipped
    - `SHA256SUMS.txt`
 
-4. Edit the draft: replace the placeholder text with the release notes, check the files are there, and publish.
+5. On the Releases page, edit the draft: replace the placeholder text with the release notes, check the files are there, and publish.
 
-If a release for the tag already exists, draft or published, the workflow adds the files to it instead of making a new one. So drafting the notes on GitHub first, with the same tag, also works.
+If `Cargo.toml` and `package.json` have different versions, the check fails with an error saying so and nothing is built. `pnpm bump` keeps them the same.
 
-If the tag does not match the version, the workflow stops with an error saying so and uploads nothing. Fix the version, delete the tag (`git push origin :v0.2.0` and `git tag -d v0.2.0`), and tag again. To rebuild the files of an existing tag: Actions, Release, Run workflow, and give it the tag. That replaces the files already on its release.
+To build a version again, for example after deleting its draft: delete its tag too (`git push origin :v0.2.0`), then push to `main` again. Or rebuild the files of an existing tag by hand: Actions, Release, Run workflow, and give it the tag. That replaces the files on its release, or makes a draft if it has none.
+
+The tag is created by the workflow before the draft, so publishing the draft does not create a new tag. It is created with the workflow's own token, which does not start other workflows.
 
 ### What it does
 
-On a GitHub-hosted Apple Silicon Mac (`macos-15`): installs Node 24, pnpm (the version in `package.json`) and stable Rust, checks the tag against the version, runs the [local-only audit](#local-only-audit), builds with `pnpm tauri build --config src-tauri/tauri.github-release.conf.json`, checks the signature, and creates the draft release with the files, or adds them to the existing release for the tag, with `gh release`. The actions it uses are pinned to commit hashes.
+On a GitHub-hosted Apple Silicon Mac (`macos-15`): after a quick check on Linux that the version is new: installs Node 24, pnpm (the version in `package.json`) and stable Rust, checks the version again, runs the [local-only audit](#local-only-audit), builds with `pnpm tauri build --config src-tauri/tauri.github-release.conf.json`, checks the signature, creates the tag, and creates the draft release with the files, or adds them to the existing release for the tag, with `gh release`. The actions it uses are pinned to commit hashes.
 
 The overlay `src-tauri/tauri.github-release.conf.json` adds the disk image to the bundle targets and signs the app ad hoc (`signingIdentity: "-"`) with the hardened runtime off, the same way as an unsigned local build. An ad hoc signature seals the bundle, which a downloaded app on Apple Silicon needs to open at all, but it names no developer, so Gatekeeper blocks the first launch until the user chooses Open Anyway (README, "Install"). Permissions stay granted across launches of one download; a new version asks again, because its signature is different.
 
@@ -204,7 +201,7 @@ Optional, with the network on: while a meeting records, `lsof -nP -i -a -p "$(pg
 ## Before a release
 
 - [ ] `cargo test --workspace`, `pnpm test`, `pnpm lint` pass.
-- [ ] The version is the same in `Cargo.toml` and `package.json`, and the tag will match it.
+- [ ] Set the new version with `pnpm bump <version>`.
 - [ ] `scripts/audit-local-only.sh` passes.
 - [ ] Look at `ureq` again. Version 3.5.2 was published on 2026-11-12, the same day it was adopted here, so it had no track record. Check its changelog and advisories, and whether a later version is the better pin. Kept for now by Francesco on 2026-11-24.
 - [ ] Decide the two open points from issue 007: whether download redirects should be limited to Hugging Face hosts, and whether proxy or system trust store support is wanted.

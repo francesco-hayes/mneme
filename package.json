@@ -17,7 +17,8 @@
     "test:watch": "vitest",
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "bump": "scripts/bump-version.sh"
   },
   "dependencies": {
     "@codemirror/commands": "^6.11.1",

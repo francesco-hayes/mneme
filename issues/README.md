@@ -40,7 +40,7 @@ Statuses: `todo`, `in progress`, `done`, `blocked`, `paused` (stopped part-way o
 | [032](032-choose-microphone.md) | Choose the microphone in Settings | 01, 05 | several | 031 | done | open |
 | [033](033-meeting-row-menu.md) | ⋯ menu on meeting rows: View, Delete to Trash | 05, 06 | ui, app | 031 | done | open |
 | [034](034-title-from-heading.md) | Meeting title follows the first `#` heading in the notes | 04, 05 | store, app, ui | 033 | done | open |
-| [035](035-github-release-workflow.md) | A version tag builds the Mac download into a draft release | 06 | release | 025 | done | open |
+| [035](035-github-release-workflow.md) | A new version on main builds the Mac download into a draft release | 06 | release | 025 | done | open |
 
 ## Lanes
 

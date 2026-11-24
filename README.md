@@ -66,6 +66,20 @@ cargo test -p mneme-core    # one crate; the app crate is `mneme`
 scripts/audit-local-only.sh # fails if network code appears outside the model downloader
 ```
 
+## Releasing
+
+Change the version and push to `main`. GitHub builds the Mac app and makes a draft release with the download attached. You add the notes and publish.
+
+![Releasing a new version: set the version, push to main, GitHub checks it is new, builds the app, makes a draft release, you publish it](docs/release-flow.svg)
+
+```sh
+pnpm bump 0.2.0
+git commit -am "Release 0.2.0"
+git push
+```
+
+Pushes that don't change the version build nothing. [docs/release.md](docs/release.md#github-release) has the details.
+
 ## Layout
 
 ```
@@ -79,7 +93,7 @@ crates/
 src-tauri/            the Tauri app (crate `mneme`): window, config, icons
 src/                  React and TypeScript UI
   lib/api/            the only way the UI talks to the backend
-scripts/              dev signing, release, local-only audit
+scripts/              dev signing, release, version bump, local-only audit
 docs/release.md       build, sign, notarize, and the manual test list
 prds/  issues/  mneme-scope.md
 ```
