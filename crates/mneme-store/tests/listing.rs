@@ -341,9 +341,11 @@ fn junk_in_the_root_is_skipped_with_a_warning_for_each_entry() {
     // Folders that are not meetings.
     let empty = root.join("2026-10-27 1500 Meeting");
     fs::create_dir(&empty).unwrap();
-    let no_notes = root.join("Attachments");
-    fs::create_dir(&no_notes).unwrap();
-    fs::write(no_notes.join("transcript.md"), "[00:00:01] Me: hi\n").unwrap();
+    // Not named like a meeting, so a collection (issue 036), with a file in
+    // it that is passed over.
+    let collection = root.join("Attachments");
+    fs::create_dir(&collection).unwrap();
+    fs::write(collection.join("transcript.md"), "[00:00:01] Me: hi\n").unwrap();
     let binary = root.join("binary notes");
     fs::create_dir(&binary).unwrap();
     fs::write(binary.join("notes.md"), [0xFFu8, 0xFE, 0x00]).unwrap();
@@ -370,6 +372,8 @@ fn junk_in_the_root_is_skipped_with_a_warning_for_each_entry() {
     // The one good meeting is listed, exactly as a read by id returns it.
     assert_eq!(list.meetings, [store.meeting(&good.id).unwrap()]);
 
+    assert_eq!(list.collections, ["Attachments"]);
+
     // One warning per bad entry, sorted by path, each naming its path.
     let mut expected = vec![
         bad_status.folder.clone(),
@@ -380,7 +384,6 @@ fn junk_in_the_root_is_skipped_with_a_warning_for_each_entry() {
         stray.clone(),
         export.clone(),
         empty.clone(),
-        no_notes.clone(),
         binary.clone(),
         notes_is_a_folder.clone(),
     ];
@@ -405,9 +408,7 @@ fn junk_in_the_root_is_skipped_with_a_warning_for_each_entry() {
     }
     #[cfg(unix)]
     assert!(matches!(reason(&link), SkipReason::NotAFolder));
-    for path in [&empty, &no_notes] {
-        assert!(matches!(reason(path), SkipReason::NoNotesFile), "{path:?}");
-    }
+    assert!(matches!(reason(&empty), SkipReason::NoNotesFile));
     for path in [&binary, &notes_is_a_folder] {
         assert!(
             matches!(

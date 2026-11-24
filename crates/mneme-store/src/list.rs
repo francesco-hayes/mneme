@@ -1,7 +1,8 @@
 //! Listing the meetings under the root, and finding one by its id.
 //!
-//! Both come from one scan: read the root's direct subfolders and the
-//! frontmatter of each `notes.md`. Nothing about the meetings is kept on
+//! Both come from one scan: read the root's direct subfolders, the
+//! subfolders of each collection among them, and the frontmatter of each
+//! `notes.md`. Nothing about the meetings is kept on
 //! disk besides the folders themselves, so a title changed in another editor
 //! or a folder renamed in Finder shows up on the next call.
 //!
@@ -10,7 +11,10 @@
 //! | Entry | In the list | Warning |
 //! | --- | --- | --- |
 //! | Folder whose `notes.md` has readable frontmatter | yes | none |
-//! | Folder with no `notes.md` | no | [`SkipReason::NoNotesFile`] |
+//! | Folder with no `notes.md`, named `YYYY-MM-DD HHMM …` | no | [`SkipReason::NoNotesFile`] |
+//! | Any other folder with no `notes.md` | a collection: its subfolders are read as meetings | none |
+//! | In a collection: a folder with no `notes.md` | no | [`SkipReason::NoNotesFile`] |
+//! | In a collection: a file, a link, a hidden entry | no | none |
 //! | Folder whose `notes.md` cannot be read or has broken frontmatter | no | [`SkipReason::Unreadable`] |
 //! | Second folder with an id another folder has | no | [`SkipReason::DuplicateId`] |
 //! | A file or a link | no | [`SkipReason::NotAFolder`] |
@@ -41,6 +45,7 @@ use std::sync::{Mutex, PoisonError};
 use crate::error::{Error, Result};
 use crate::frontmatter::NotesFile;
 use crate::meeting::{KEY_ID, Meeting, MeetingId, MeetingSummary, NOTES_FILE};
+use crate::naming::looks_like_meeting_folder;
 use crate::store::{self, OpenNotes, Store};
 use crate::transcript::count_transcript_lines;
 
@@ -58,6 +63,9 @@ pub struct MeetingList {
     /// Everything in the root that is not in `meetings`, with the reason.
     /// Sorted by path. Empty for a tidy root.
     pub warnings: Vec<ListWarning>,
+    /// Every collection (folder of meetings) in the root, empty ones too,
+    /// sorted by name ignoring case.
+    pub collections: Vec<String>,
 }
 
 /// One entry of the root that a scan left out, and why.
@@ -160,9 +168,11 @@ impl Store {
         meetings.sort_by(newest_first);
 
         self.hints.replace(&scan);
+        let collections = scan.collections().to_vec();
         Ok(MeetingList {
             meetings,
             warnings: scan.into_warnings(),
+            collections,
         })
     }
 
@@ -281,9 +291,16 @@ pub(crate) struct Scan {
     /// by path. This includes folders whose other keys are unusable.
     ids: HashMap<MeetingId, Vec<PathBuf>>,
     warnings: Vec<ListWarning>,
+    /// Names of the collections in the root, sorted ignoring case.
+    collections: Vec<String>,
 }
 
 impl Scan {
+    /// Names of the collections in the root, sorted ignoring case.
+    pub(crate) fn collections(&self) -> &[String] {
+        &self.collections
+    }
+
     /// The one folder with this id.
     fn resolve(&self, id: &MeetingId) -> Result<PathBuf> {
         match self.ids.get(id).map(Vec::as_slice) {
@@ -337,77 +354,170 @@ impl Scan {
     }
 }
 
-/// Reads every direct subfolder of `root` once. Each folder whose `notes.md`
-/// has readable frontmatter is passed to `meeting`, in no particular order;
-/// everything else becomes a warning in the result.
+/// Reads every direct subfolder of `root` once, and every direct subfolder
+/// of each collection in it. Each folder whose `notes.md` has readable
+/// frontmatter is passed to `meeting`, in no particular order; everything
+/// else becomes a warning in the result.
+///
+/// A root subfolder without a `notes.md` is a collection, unless it is
+/// hidden (skipped) or named like a meeting folder (a meeting a crash left
+/// without its `notes.md`: a warning). See the crate docs for the layout.
 ///
 /// Fails only if the root itself cannot be listed. The caller holds the
 /// store lock if it needs the folders to stay put while it works on them.
 pub(crate) fn scan(root: &Path, mut meeting: impl FnMut(OpenNotes)) -> Result<Scan> {
+    let mut found = Found::default();
     let entries = fs::read_dir(root).map_err(|err| Error::io(root, err))?;
 
-    let mut ids: HashMap<MeetingId, Vec<PathBuf>> = HashMap::new();
-    let mut warnings = Vec::new();
-    let mut warn = |path: PathBuf, reason: SkipReason| warnings.push(ListWarning { path, reason });
-
     for entry in entries {
-        let entry = match entry {
-            Ok(entry) => entry,
-            Err(err) => {
-                warn(
-                    root.to_owned(),
-                    SkipReason::Unreadable(Error::io(root, err)),
-                );
-                continue;
-            }
+        let Some(dir) = found.dir_entry(root, entry, true) else {
+            continue;
         };
-        let path = entry.path();
-        let hidden = entry.file_name().as_encoded_bytes().first() == Some(&b'.');
-
-        // `file_type` does not follow links: a link to a folder is not a
-        // meeting folder. It could point outside the root or at a folder
-        // that is already listed.
-        match entry.file_type() {
-            Ok(kind) if kind.is_dir() => {}
-            Ok(_) => {
-                if !hidden {
-                    warn(path, SkipReason::NotAFolder);
+        match read_folder(&dir.path) {
+            Ok(None) if dir.hidden => {}
+            Ok(None) => match dir.name.as_deref() {
+                Some(name) if !looks_like_meeting_folder(name) => {
+                    found.collections.push(name.to_owned());
+                    found.scan_collection(&dir.path, &mut meeting);
                 }
-                continue;
-            }
-            Err(err) => {
-                let reason = SkipReason::Unreadable(Error::io(&path, err));
-                warn(path, reason);
-                continue;
-            }
-        }
-
-        match read_folder(&path) {
-            Ok(Some(open)) => {
-                ids.entry(open.summary.id.clone()).or_default().push(path);
-                meeting(open);
-            }
-            Ok(None) => {
-                if !hidden {
-                    warn(path, SkipReason::NoNotesFile);
-                }
-            }
-            Err(Broken { id, error }) => {
-                if let Some(id) = id {
-                    ids.entry(id).or_default().push(path.clone());
-                }
-                warn(path, SkipReason::Unreadable(error));
-            }
+                _ => found.warn(dir.path, SkipReason::NoNotesFile),
+            },
+            read => found.meeting(dir.path, read, &mut meeting),
         }
     }
 
+    let Found {
+        mut ids,
+        warnings,
+        mut collections,
+    } = found;
     // `read_dir` returns entries in whatever order the file system keeps
     // them. Sorted, "the first folder with this id" means the same thing on
     // every call.
     for folders in ids.values_mut() {
         folders.sort();
     }
-    Ok(Scan { ids, warnings })
+    collections.sort_by_key(|name| (name.to_lowercase(), name.clone()));
+    Ok(Scan {
+        ids,
+        warnings,
+        collections,
+    })
+}
+
+/// What [`scan`] collects as it goes.
+#[derive(Default)]
+struct Found {
+    ids: HashMap<MeetingId, Vec<PathBuf>>,
+    warnings: Vec<ListWarning>,
+    collections: Vec<String>,
+}
+
+/// A real folder (not a link) met by a scan.
+struct Dir {
+    path: PathBuf,
+    /// The name, when it is valid UTF-8.
+    name: Option<String>,
+    hidden: bool,
+}
+
+impl Found {
+    fn warn(&mut self, path: PathBuf, reason: SkipReason) {
+        self.warnings.push(ListWarning { path, reason });
+    }
+
+    /// Sorts out one entry of `parent`: a folder comes back, anything else is
+    /// a warning (in the root, unless hidden) or passed over (in a
+    /// collection, which may hold other files).
+    fn dir_entry(
+        &mut self,
+        parent: &Path,
+        entry: io::Result<fs::DirEntry>,
+        in_root: bool,
+    ) -> Option<Dir> {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(err) => {
+                self.warn(
+                    parent.to_owned(),
+                    SkipReason::Unreadable(Error::io(parent, err)),
+                );
+                return None;
+            }
+        };
+        let path = entry.path();
+        let file_name = entry.file_name();
+        let hidden = file_name.as_encoded_bytes().first() == Some(&b'.');
+
+        // `file_type` does not follow links: a link to a folder is not a
+        // meeting folder. It could point outside the root or at a folder
+        // that is already listed.
+        match entry.file_type() {
+            Ok(kind) if kind.is_dir() => Some(Dir {
+                path,
+                name: file_name.to_str().map(str::to_owned),
+                hidden,
+            }),
+            Ok(_) => {
+                if in_root && !hidden {
+                    self.warn(path, SkipReason::NotAFolder);
+                }
+                None
+            }
+            Err(err) => {
+                let reason = SkipReason::Unreadable(Error::io(&path, err));
+                self.warn(path, reason);
+                None
+            }
+        }
+    }
+
+    /// Records what reading one meeting folder gave.
+    fn meeting(
+        &mut self,
+        path: PathBuf,
+        read: Result<Option<OpenNotes>, Broken>,
+        meeting: &mut impl FnMut(OpenNotes),
+    ) {
+        match read {
+            Ok(Some(open)) => {
+                self.ids
+                    .entry(open.summary.id.clone())
+                    .or_default()
+                    .push(path);
+                meeting(open);
+            }
+            Ok(None) => self.warn(path, SkipReason::NoNotesFile),
+            Err(Broken { id, error }) => {
+                if let Some(id) = id {
+                    self.ids.entry(id).or_default().push(path.clone());
+                }
+                self.warn(path, SkipReason::Unreadable(error));
+            }
+        }
+    }
+
+    /// Reads the meeting folders in one collection. Collections do not nest:
+    /// a folder in it without a `notes.md` is a warning.
+    fn scan_collection(&mut self, collection: &Path, meeting: &mut impl FnMut(OpenNotes)) {
+        let entries = match fs::read_dir(collection) {
+            Ok(entries) => entries,
+            Err(err) => {
+                let reason = SkipReason::Unreadable(Error::io(collection, err));
+                self.warn(collection.to_owned(), reason);
+                return;
+            }
+        };
+        for entry in entries {
+            let Some(dir) = self.dir_entry(collection, entry, false) else {
+                continue;
+            };
+            match read_folder(&dir.path) {
+                Ok(None) if dir.hidden => {}
+                read => self.meeting(dir.path, read, meeting),
+            }
+        }
+    }
 }
 
 /// A `notes.md` that is there but cannot be read or understood. `id` is set

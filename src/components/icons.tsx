@@ -134,3 +134,29 @@ export function CheckIcon() {
     </Icon>
   );
 }
+
+export function FolderIcon() {
+  return (
+    <Icon>
+      <path d="M2 4.5c0-.6.4-1 1-1h3.2l1.5 1.7H13c.6 0 1 .4 1 1V12c0 .6-.4 1-1 1H3c-.6 0-1-.4-1-1z" />
+    </Icon>
+  );
+}
+
+export function StackIcon() {
+  return (
+    <Icon>
+      <rect x="2.5" y="2.5" width="11" height="11" rx="1.5" />
+      <path d="M5 6h6M5 8.5h6M5 11h4" />
+    </Icon>
+  );
+}
+
+export function InboxIcon() {
+  return (
+    <Icon>
+      <path d="M2.5 9.5 4 3.5h8l1.5 6V12c0 .6-.4 1-1 1h-9c-.6 0-1-.4-1-1z" />
+      <path d="M2.5 9.5h3l.8 1.5h3.4l.8-1.5h3" />
+    </Icon>
+  );
+}

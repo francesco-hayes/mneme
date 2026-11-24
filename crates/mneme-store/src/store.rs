@@ -114,12 +114,30 @@ impl Store {
     /// Fails with [`Error::FolderExists`] only if the plain name and every
     /// numbered one up to 999 are taken; nothing is created then.
     pub fn create_meeting(&self, new: NewMeeting) -> Result<MeetingSummary> {
+        self.create_meeting_in(new, None)
+    }
+
+    /// [`create_meeting`](Self::create_meeting) in a collection: the new
+    /// folder goes into the collection's folder instead of the root. `None`
+    /// is the root.
+    ///
+    /// Fails with [`Error::CollectionNotFound`] if there is no such
+    /// collection; nothing is created then.
+    pub fn create_meeting_in(
+        &self,
+        new: NewMeeting,
+        collection: Option<&str>,
+    ) -> Result<MeetingSummary> {
         // Creates on this store run one at a time. Claiming a folder name is
         // atomic without the lock; what the lock adds is that no rename on
         // this store can run while the new folder is still empty. A folder
         // rename replaces an empty folder that has its target name, and the
         // cleanup below would then delete the meeting that was moved there.
         let _guard = self.lock();
+        let parent = match collection {
+            Some(name) => self.collection_folder_locked(name)?,
+            None => self.root.clone(),
+        };
 
         let mut summary = MeetingSummary {
             id: MeetingId::random(),
@@ -132,7 +150,7 @@ impl Store {
             language: new.language.filter(|language| !language.is_empty()),
             folder: PathBuf::new(),
         };
-        summary.folder = create_free_folder(&self.root, &summary.expected_folder_name())?;
+        summary.folder = create_free_folder(&parent, &summary.expected_folder_name())?;
 
         if let Err(err) = write_new_meeting_files(&summary) {
             // The folder was created just above and holds nothing but what
@@ -140,7 +158,7 @@ impl Store {
             let _ = fs::remove_dir_all(&summary.folder);
             return Err(err);
         }
-        sync_dir(&self.root);
+        sync_dir(&parent);
         self.created
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -278,7 +296,9 @@ impl Store {
             return Err(Error::FolderExists { path: target });
         }
         fs::rename(&summary.folder, &target).map_err(|err| Error::io(&summary.folder, err))?;
-        sync_dir(&self.root);
+        if let Some(parent) = target.parent() {
+            sync_dir(parent);
+        }
         self.hints.moved(&summary.id, &target);
         summary.folder = target;
         Ok(())
@@ -411,7 +431,7 @@ fn rename_target(summary: &MeetingSummary) -> Option<PathBuf> {
 /// Whether something other than `folder` itself already has the name
 /// `target`. On a file system that ignores case, a rename that only changes
 /// capitals finds the folder itself under the new name; that is not a clash.
-fn is_taken(folder: &Path, target: &Path) -> bool {
+pub(crate) fn is_taken(folder: &Path, target: &Path) -> bool {
     fs::symlink_metadata(target).is_ok() && !is_same_dir(folder, target)
 }
 

@@ -1,6 +1,6 @@
 # PRD 04: Storage
 
-Covers build step 4, the "Storing meetings" section, the gap "Incremental saves", and settings persistence for MVP feature 5. Issues: 010–014, 026.
+Covers build step 4, the "Storing meetings" section, the gap "Incremental saves", and settings persistence for MVP feature 5. Issues: 010–014, 026, 036.
 
 ## Problem
 
@@ -30,7 +30,16 @@ Meetings must be plain files the user owns, readable in any editor, and safe aga
     transcript.md          [00:01:23] Them: ...
     notes-timeline.jsonl   {"t":"00:04:12","text":"- ask Ana about the API"}
   2026-10-27 1430 Meeting/  default title kept
+  Acme/                     a collection (issue 036)
+    2026-10-28 1000 Kickoff/
 ```
+
+### Collections (issue 036)
+
+- A collection is a folder of meeting folders directly in the root; the app calls it a folder. One level only.
+- A root subfolder with a `notes.md` is a meeting. A hidden one is skipped. One with no `notes.md` whose name starts `YYYY-MM-DD HHMM ` is a meeting folder a crash left behind (a warning). Any other is a collection, and its direct subfolders are read as meetings.
+- Collection names follow the title rules for folder names; empty, date-like and taken names are refused.
+- Moving a meeting renames its folder into another parent, keeping its name. Refused while it records or onto a taken name. Renaming or deleting (to the Trash) a collection is refused while a meeting in it records.
 
 ### Folder names
 
@@ -76,7 +85,7 @@ Unknown keys are kept on rewrite, so hand edits and future versions survive.
 
 ### Listing and recovery
 
-- List meetings by scanning the root, newest first, returning id, title, date, duration and status. Folders without a readable `notes.md` are skipped. Fine for hundreds of meetings.
+- List meetings by scanning the root and its collections, newest first, returning id, title, date, duration and status. Folders without a readable `notes.md` are skipped. Fine for hundreds of meetings.
 - Look up a meeting by id.
 - On launch, any meeting still marked `recording` is set to `interrupted`, its transcript is sorted, and its duration is set from the last transcript timestamp.
 

@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { SettingsInSidebarContext } from "../components";
 import { api } from "../lib/api";
 import { FirstRunScreen } from "../screens/FirstRunScreen";
 import { HomeScreen } from "../screens/HomeScreen";
@@ -12,6 +13,7 @@ import {
 import styles from "./AppShell.module.css";
 import { RecordingBar } from "./RecordingBar";
 import { RecordingErrorNotice } from "./RecordingErrorNotice";
+import { Sidebar } from "./Sidebar";
 
 function CurrentScreen({ route }: { route: Route }) {
   switch (route.name) {
@@ -50,16 +52,19 @@ function useOpenMeetingRequests(navigation: Navigation) {
 }
 
 /**
- * The window's layout: the current screen and, under it, the recording bar.
- * A start or stop that failed outside the window is said in one line between
- * the two, so it shows on every screen without covering any of it.
+ * The window's layout: the sidebar (folders and Settings) on the left, and
+ * beside it the current screen with the recording bar under it. A start or
+ * stop that failed outside the window is said in one line between the two,
+ * so it shows on every screen without covering any of it. First run has no
+ * sidebar.
  */
 export function AppShell() {
   const navigation = useNavigation();
   const { route } = navigation;
   useOpenMeetingRequests(navigation);
 
-  return (
+  const withSidebar = route.name !== "first-run";
+  const main = (
     <div className={styles.app}>
       <div className={styles.screenArea}>
         <CurrentScreen route={route} />
@@ -67,5 +72,14 @@ export function AppShell() {
       <RecordingErrorNotice />
       <RecordingBar />
     </div>
+  );
+  if (!withSidebar) return main;
+  return (
+    <SettingsInSidebarContext value={true}>
+      <div className={styles.window}>
+        <Sidebar />
+        {main}
+      </div>
+    </SettingsInSidebarContext>
   );
 }

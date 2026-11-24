@@ -91,7 +91,7 @@
   <text class="n" x="76" y="456" text-anchor="middle">4</text>
   <text class="t" x="108" y="442">Builds the Mac app</text>
   <text class="s" x="108" y="467">The DMG, a zip of the app, and checksums</text>
-  <text class="tag" x="504" y="442" text-anchor="end">about 20 minutes</text>
+  <text class="tag" x="504" y="442" text-anchor="end">about 6 minutes</text>
 
   <line class="line" x1="280" y1="490" x2="280" y2="522" marker-end="url(#arrow)"/>
 

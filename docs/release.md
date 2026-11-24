@@ -82,12 +82,18 @@ A new version on `main` builds the Mac app and puts it in a draft release on Git
 1. Set the new version: `pnpm bump 0.2.0`. It writes the version to `Cargo.toml` (`[workspace.package]`), `package.json` and the workspace crates in `Cargo.lock`.
 2. Commit and push to `main`, or merge a pull request into it.
 3. The Release workflow starts (Actions tab). Its first job checks whether `v0.2.0` is already tagged or released. If it is, the run stops there in a few seconds, which is what happens on every push that does not change the version.
-4. For a new version it builds the app, about 15–25 minutes, then tags the commit `v0.2.0` and creates a draft release named "Mneme 0.2.0" with three files:
+4. For a new version it builds the app, about 6 minutes, then tags the commit `v0.2.0` and creates a draft release named "Mneme 0.2.0" with three files:
    - `Mneme-<version>-macos-arm64.dmg`, the download for most people
    - `Mneme-<version>-macos-arm64.zip`, the same app zipped
    - `SHA256SUMS.txt`
 
 5. On the Releases page, edit the draft: replace the placeholder text with the release notes, check the files are there, and publish.
+
+### Beta versions
+
+A version with a pre-release part, such as `pnpm bump 0.2.0-beta.1` (or `-rc.1`), goes through the same steps, but its draft is marked as a **pre-release**. Once published it is listed on the Releases page for testers, and GitHub does not show it as the latest release, so the 0.1.0 download stays the one people find. Fix what the testers find, bump to `0.2.0-beta.2` for another round, and bump to plain `0.2.0` for the real release.
+
+The app reports the full version, `0.2.0-beta.1`, in Finder and About. macOS takes it as given for an app downloaded outside the App Store.
 
 If `Cargo.toml` and `package.json` have different versions, the check fails with an error saying so and nothing is built. `pnpm bump` keeps them the same.
 
@@ -107,7 +113,6 @@ The overlay `src-tauri/tauri.github-release.conf.json` adds the disk image to th
 - **Apple Silicon only.** Intel Macs running macOS 14.4 could run Mneme, but whisper.cpp has not been built for `x86_64` here.
 - **No Windows or Linux.** System audio capture and Move to Trash are macOS-only; elsewhere the app would record the microphone only.
 - **No tests in the workflow.** Run the checks under [Before a release](#before-a-release) first. Some Rust tests read this Mac's real audio devices, which a hosted runner does not have.
-- **Not run on GitHub yet** as of 2026-11-24. The same build was run locally with the overlay (see issue 035).
 
 ## Release
 

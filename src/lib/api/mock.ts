@@ -16,15 +16,19 @@
 //   there for a while.
 
 import {
+  collectionName,
   DEFAULT_INSTALLED_MODEL_ID,
   defaultMeetingTitle,
+  looksLikeMeetingFolder,
   meetingFolderName,
   MOCK_MEETINGS_ROOT,
   MOCK_MODEL_CATALOG,
   MOCK_RETIRED_MODEL_IDS,
   type MockMeetingSeed,
   scriptedLine,
+  SEED_COLLECTIONS,
   seedMeetings,
+  seedMeetingsInFolders,
   seedMeetingsWithLongTranscript,
 } from "./mockSeed";
 import type {
@@ -68,6 +72,8 @@ export interface MockOptions {
   now?: () => Date;
   /** Meetings to start with, or a function of the clock's current time. Default: `seedMeetings`. */
   meetings?: MockMeetingSeed[] | ((now: Date) => MockMeetingSeed[]);
+  /** Collections (folders) that exist besides those the meetings are in. Default: none. */
+  collections?: string[];
   /** Ids of installed models. Default: one model. Pass `[]` for "none installed". */
   installedModelIds?: string[];
   /** Merged over `{ defaultModelId: <first installed or null>, language: "auto", globalShortcut: null, spellcheck: false, microphoneId: null }`. */
@@ -158,6 +164,11 @@ export const mockScenarios = {
   empty: { meetings: [] },
   /** The default seed plus a meeting with a 2,000-line transcript. */
   "long-transcript": { meetings: (now) => seedMeetingsWithLongTranscript(now) },
+  /** The default seed with meetings in folders, and one empty folder. */
+  folders: {
+    meetings: (now) => seedMeetingsInFolders(now),
+    collections: SEED_COLLECTIONS,
+  },
 } satisfies Record<string, MockOptions>;
 
 export type MockScenario = keyof typeof mockScenarios;
@@ -197,6 +208,8 @@ interface MeetingRecord {
   transcript: TranscriptLine[];
   /** Kept apart from the title because a rename while recording is applied at stop. */
   folderName: string;
+  /** The collection (folder of meetings) it is in, or null. */
+  collection: string | null;
 }
 
 interface ActiveDownload {
@@ -277,6 +290,7 @@ export function createMockApi(initialOptions: MockOptions = {}): MockApi {
 
   // State, replaced by `init`.
   let meetings: Map<string, MeetingRecord>;
+  let collections: Set<string>;
   let installed: Set<string>;
   let settings: Settings;
   let permissions: Permissions;
@@ -311,6 +325,7 @@ export function createMockApi(initialOptions: MockOptions = {}): MockApi {
       notes: seed.notes,
       transcript: seed.transcript.map((line) => ({ ...line })),
       folderName: meetingFolderName(seed.startedAt, seed.title, titleEdited),
+      collection: seed.collection ?? null,
     };
   }
 
@@ -348,6 +363,10 @@ export function createMockApi(initialOptions: MockOptions = {}): MockApi {
         ? options.meetings(now())
         : (options.meetings ?? seedMeetings(now()));
     meetings = new Map(seeds.map((seed) => [seed.id, toRecord(seed)]));
+    collections = new Set(options.collections ?? []);
+    for (const meeting of meetings.values()) {
+      if (meeting.collection !== null) collections.add(meeting.collection);
+    }
     installed = new Set(
       options.installedModelIds ?? [DEFAULT_INSTALLED_MODEL_ID],
     );
@@ -409,7 +428,37 @@ export function createMockApi(initialOptions: MockOptions = {}): MockApi {
       startedAt: meeting.startedAt,
       durationSecs: meeting.durationSecs,
       status: meeting.status,
+      collection: meeting.collection,
     };
+  }
+
+  /** Throws unless `name` is an existing collection. */
+  function requireCollection(name: string) {
+    if (!collections.has(name)) throw new Error(`no folder named "${name}"`);
+  }
+
+  /** A name for a new or renamed collection, or an error saying why not. */
+  function newCollectionName(name: string, except?: string): string {
+    const stored = collectionName(name);
+    if (stored === "") throw new Error("A folder name cannot be empty.");
+    if (looksLikeMeetingFolder(stored)) {
+      throw new Error(
+        "A folder name cannot start with a date and time like a meeting's (2026-10-27 1430).",
+      );
+    }
+    const taken = [...collections].some(
+      (other) =>
+        other !== except && other.toLowerCase() === stored.toLowerCase(),
+    );
+    if (taken) throw new Error(`a folder named "${stored}" already exists`);
+    return stored;
+  }
+
+  function liveIn(collection: string): boolean {
+    if (recording.status === "idle" || recording.meetingId === null) {
+      return false;
+    }
+    return meetings.get(recording.meetingId)?.collection === collection;
   }
 
   function toMeeting(meeting: MeetingRecord): Meeting {
@@ -417,7 +466,9 @@ export function createMockApi(initialOptions: MockOptions = {}): MockApi {
       ...toSummary(meeting),
       notes: meeting.notes,
       transcriptLineCount: meeting.transcript.length,
-      folderPath: `${MOCK_MEETINGS_ROOT}/${meeting.folderName}`,
+      folderPath: [MOCK_MEETINGS_ROOT, meeting.collection, meeting.folderName]
+        .filter((part) => part !== null)
+        .join("/"),
     };
   }
 
@@ -473,7 +524,10 @@ export function createMockApi(initialOptions: MockOptions = {}): MockApi {
   }
 
   /** The model has loaded: creates the meeting and starts recording it. */
-  function finishStart(modelId: string): Meeting {
+  function finishStart(
+    modelId: string,
+    collection: string | null = null,
+  ): Meeting {
     // A denied system audio permission still records, with the microphone only.
     const micOnly = resolvePermission("systemAudio") === "denied";
 
@@ -488,6 +542,7 @@ export function createMockApi(initialOptions: MockOptions = {}): MockApi {
       status: "recording",
       notes: "",
       transcript: [],
+      collection,
     });
     meetings.set(meeting.id, meeting);
     recording = {
@@ -576,11 +631,12 @@ export function createMockApi(initialOptions: MockOptions = {}): MockApi {
         record(id).transcript.map((line) => ({ ...line })),
       ),
 
-    startMeeting: () =>
+    startMeeting: (collection = null) =>
       call("startMeeting", () => {
+        if (collection !== null) requireCollection(collection);
         const modelId = beginStart();
         emitRecording();
-        return finishStart(modelId);
+        return finishStart(modelId, collection);
       }),
 
     stopMeeting: () =>
@@ -661,6 +717,81 @@ export function createMockApi(initialOptions: MockOptions = {}): MockApi {
           );
         }
         meetings.delete(id);
+      }),
+
+    moveMeeting: (id, collection) =>
+      call("moveMeeting", () => {
+        const meeting = record(id);
+        if (collection !== null) requireCollection(collection);
+        if (meeting.collection === collection) return toSummary(meeting);
+        if (recording.status !== "idle" && recording.meetingId === id) {
+          throw new Error(
+            "This meeting is being recorded. Stop the recording before moving it.",
+          );
+        }
+        const clash = [...meetings.values()].some(
+          (other) =>
+            other.id !== id &&
+            other.collection === collection &&
+            other.folderName === meeting.folderName,
+        );
+        if (clash) {
+          throw new Error(
+            `a folder named "${meeting.folderName}" already exists`,
+          );
+        }
+        meeting.collection = collection;
+        return toSummary(meeting);
+      }),
+
+    listCollections: () =>
+      call("listCollections", () =>
+        [...collections].sort((a, b) =>
+          a.toLowerCase() === b.toLowerCase()
+            ? a.localeCompare(b)
+            : a.toLowerCase() < b.toLowerCase()
+              ? -1
+              : 1,
+        ),
+      ),
+
+    createCollection: (name) =>
+      call("createCollection", () => {
+        const stored = newCollectionName(name);
+        collections.add(stored);
+        return stored;
+      }),
+
+    renameCollection: (name, newName) =>
+      call("renameCollection", () => {
+        requireCollection(name);
+        const stored = newCollectionName(newName, name);
+        if (stored === name) return stored;
+        if (liveIn(name)) {
+          throw new Error(
+            "A meeting in this folder is being recorded. Stop the recording before renaming the folder.",
+          );
+        }
+        collections.delete(name);
+        collections.add(stored);
+        for (const meeting of meetings.values()) {
+          if (meeting.collection === name) meeting.collection = stored;
+        }
+        return stored;
+      }),
+
+    deleteCollection: (name) =>
+      call("deleteCollection", () => {
+        requireCollection(name);
+        if (liveIn(name)) {
+          throw new Error(
+            "A meeting in this folder is being recorded. Stop the recording before deleting the folder.",
+          );
+        }
+        collections.delete(name);
+        for (const [id, meeting] of meetings) {
+          if (meeting.collection === name) meetings.delete(id);
+        }
       }),
 
     getRecordingState: () =>
@@ -828,7 +959,9 @@ export function createMockApi(initialOptions: MockOptions = {}): MockApi {
       microphones = list.map((m) => ({ ...m }));
     },
     putMeeting(meeting) {
-      meetings.set(meeting.id, toRecord(meeting));
+      const put = toRecord(meeting);
+      meetings.set(put.id, put);
+      if (put.collection !== null) collections.add(put.collection);
     },
     failNext(method, message = `Mock failure in ${method}`) {
       failures.set(method, message);

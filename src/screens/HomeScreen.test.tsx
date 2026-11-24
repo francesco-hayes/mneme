@@ -5,6 +5,7 @@ import type { MeetingSummary } from "../lib/api";
 import { mockApi, type MockOptions, mockScenarios } from "../lib/api/mock";
 import type { MockMeetingSeed } from "../lib/api/mockSeed";
 import { RecordingBar } from "../shell/RecordingBar";
+import { Sidebar } from "../shell/Sidebar";
 import { advance, renderShell, renderWithProviders } from "../test/render";
 import { HomeScreen } from "./HomeScreen";
 
@@ -115,6 +116,7 @@ describe("the list", () => {
         startedAt,
         durationSecs,
         status,
+        collection: null,
       }),
     );
     // The mock sorts; hand the screen an unsorted list directly.
@@ -193,7 +195,7 @@ describe("the ⋯ menu", () => {
   const menuItem = (name: string | RegExp) =>
     screen.getByRole("menuitem", { name });
 
-  test("every row has one, closed, holding View and Delete", async () => {
+  test("every row has one, closed, holding View, Move to… and Delete", async () => {
     const user = userEvent.setup();
     renderHome();
     await findList();
@@ -206,7 +208,11 @@ describe("the ⋯ menu", () => {
     await user.click(menuButton("Standup"));
     expect(menuButton("Standup")).toHaveAttribute("aria-expanded", "true");
     const items = within(screen.getByRole("menu")).getAllByRole("menuitem");
-    expect(items.map((item) => item.textContent)).toEqual(["View", "Delete…"]);
+    expect(items.map((item) => item.textContent)).toEqual([
+      "View",
+      "Move to…",
+      "Delete…",
+    ]);
     expect(items[0]).toHaveFocus();
   });
 
@@ -346,12 +352,14 @@ describe("the ⋯ menu", () => {
     await user.keyboard("{ArrowDown}");
     expect(menuItem("View")).toHaveFocus();
     await user.keyboard("{ArrowDown}");
+    expect(menuItem("Move to…")).toHaveFocus();
+    await user.keyboard("{ArrowDown}");
     expect(menuItem("Delete…")).toHaveFocus();
     // Stays in the menu: the list does not move to the next row.
     await user.keyboard("{ArrowDown}");
     expect(menuItem("Delete…")).toHaveFocus();
     await user.keyboard("{ArrowUp}");
-    expect(menuItem("View")).toHaveFocus();
+    expect(menuItem("Move to…")).toHaveFocus();
 
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("menu")).toBeNull();
@@ -814,5 +822,222 @@ describe("keyboard", () => {
     await user.keyboard("{Meta>}n{/Meta}");
 
     expect(start).not.toHaveBeenCalled();
+  });
+});
+
+describe("folders", () => {
+  beforeEach(() =>
+    resetMock({
+      meetings: MEETINGS.map((seed) =>
+        seed.id === "standup" || seed.id === "planning"
+          ? { ...seed, collection: "Acme" }
+          : seed,
+      ),
+      collections: ["Hiring"],
+    }),
+  );
+
+  /** Home with the sidebar beside it, as in the shell, with fixed dates. */
+  function renderWithSidebar() {
+    return renderWithProviders(
+      <>
+        <Sidebar />
+        <HomeScreen now={now} locale="en-US" timeZone="America/New_York" />
+      </>,
+    );
+  }
+
+  const sidebar = () =>
+    within(screen.getByRole("navigation", { name: "Sidebar" }));
+  const item = (name: string) => sidebar().getByRole("button", { name });
+  const count = (name: string) =>
+    item(name).querySelector("span[aria-hidden='true']")?.textContent;
+
+  test("the sidebar lists the folders with their counts, and All lists every meeting", async () => {
+    renderWithSidebar();
+    await findList();
+
+    expect(item("All meetings")).toHaveAttribute("aria-current", "page");
+    expect(count("All meetings")).toBe("4");
+    expect(count("Unfiled")).toBe("2");
+    const folders = within(sidebar().getByRole("list", { name: "Folders" }));
+    expect(
+      folders.getAllByRole("button").map((button) => button.textContent),
+    ).toEqual(["Acme2", "Hiring0"]);
+    expect(item("Settings")).toBeInTheDocument();
+    expect(rowTexts()).toEqual([
+      "StandupToday 2:30 PM · Acme32 min",
+      "Design reviewYesterday 11:00 AM · Interrupted21 min",
+      "Quarterly planningOct 27 · Acme1 hr 5 min",
+      "KickoffDec 3, 2025",
+    ]);
+  });
+
+  test("a folder narrows the list, and New meeting starts there", async () => {
+    const user = userEvent.setup();
+    renderWithSidebar();
+    await findList();
+
+    await user.click(item("Acme"));
+
+    expect(await heading("Acme")).toBeInTheDocument();
+    expect(item("Acme")).toHaveAttribute("aria-current", "page");
+    expect(item("All meetings")).not.toHaveAttribute("aria-current");
+    expect(rowTexts()).toEqual([
+      "StandupToday 2:30 PM32 min",
+      "Quarterly planningOct 271 hr 5 min",
+    ]);
+
+    await user.click(newMeeting());
+    await waitFor(async () => {
+      const live = (await mockApi.listMeetings()).find(
+        (m) => m.status === "recording",
+      );
+      expect(live?.collection).toBe("Acme");
+    });
+  });
+
+  test("Unfiled and an empty folder", async () => {
+    const user = userEvent.setup();
+    renderWithSidebar();
+    await findList();
+
+    await user.click(item("Unfiled"));
+    expect(rowTexts()).toEqual([
+      "Design reviewYesterday 11:00 AM · Interrupted21 min",
+      "KickoffDec 3, 2025",
+    ]);
+
+    await user.click(item("Hiring"));
+    expect(
+      await content().findByText("No meetings in Hiring"),
+    ).toBeInTheDocument();
+  });
+
+  test("a folder chosen on another screen shows on Home", async () => {
+    const user = userEvent.setup();
+    renderShell({ route: { name: "settings" } });
+    await heading("Settings");
+    expect(item("Settings")).toHaveAttribute("aria-current", "page");
+
+    await user.click(await sidebar().findByRole("button", { name: "Acme" }));
+
+    expect(await heading("Acme")).toBeInTheDocument();
+    expect(within(await findList()).getAllByRole("listitem")).toHaveLength(2);
+    // The sidebar has Settings, so the top bar does not.
+    expect(topBar().queryByRole("button", { name: "Settings" })).toBeNull();
+  });
+
+  test("with no meetings yet, a folder can still be made", async () => {
+    resetMock({ meetings: [], collections: [] });
+    const user = userEvent.setup();
+    renderWithSidebar();
+
+    expect(await content().findByText("No meetings yet")).toBeInTheDocument();
+    expect(
+      sidebar().getByText("Group meetings by client or project."),
+    ).toBeInTheDocument();
+    await user.click(item("New folder"));
+    await user.type(
+      screen.getByRole("textbox", { name: "Name" }),
+      "Acme{Enter}",
+    );
+
+    expect(await heading("Acme")).toBeInTheDocument();
+    expect(
+      await content().findByText("No meetings in Acme"),
+    ).toBeInTheDocument();
+    expect(item("Acme")).toHaveAttribute("aria-current", "page");
+  });
+
+  test("New folder makes one and shows it", async () => {
+    const user = userEvent.setup();
+    renderWithSidebar();
+    await findList();
+
+    await user.click(item("New folder"));
+    const field = screen.getByRole("textbox", { name: "Name" });
+    expect(field).toHaveFocus();
+    expect(screen.getByRole("button", { name: "Create" })).toBeDisabled();
+    await user.type(field, "Board{Enter}");
+
+    expect(await heading("Board")).toBeInTheDocument();
+    expect(
+      await sidebar().findByRole("button", { name: "Board" }),
+    ).toHaveAttribute("aria-current", "page");
+    expect(await mockApi.listCollections()).toContain("Board");
+  });
+
+  test("a taken name keeps the dialog open with the reason", async () => {
+    const user = userEvent.setup();
+    renderWithSidebar();
+    await findList();
+
+    await user.click(item("New folder"));
+    await user.type(screen.getByRole("textbox", { name: "Name" }), "acme");
+    await user.click(screen.getByRole("button", { name: "Create" }));
+
+    expect(await screen.findByText(/already exists/)).toBeInTheDocument();
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+  });
+
+  test("Move to… moves a meeting into a folder and the counts follow", async () => {
+    const user = userEvent.setup();
+    renderWithSidebar();
+    await findList();
+
+    await user.click(
+      within(list()).getByRole("button", { name: "Options for Kickoff" }),
+    );
+    await user.click(screen.getByRole("menuitem", { name: "Move to…" }));
+    const dialog = within(screen.getByRole("alertdialog"));
+    expect(dialog.getByRole("radio", { name: "No folder" })).toBeChecked();
+    expect(dialog.getByRole("button", { name: "Move" })).toBeDisabled();
+    await user.click(dialog.getByRole("radio", { name: "Hiring" }));
+    await user.click(dialog.getByRole("button", { name: "Move" }));
+
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    expect((await mockApi.getMeeting("kickoff")).collection).toBe("Hiring");
+    await waitFor(() =>
+      expect(rowTexts()).toContain("KickoffDec 3, 2025 · Hiring"),
+    );
+    expect(count("Hiring")).toBe("1");
+    expect(count("Unfiled")).toBe("1");
+  });
+
+  test("a folder's menu renames it and deletes it", async () => {
+    const user = userEvent.setup();
+    renderWithSidebar();
+    await findList();
+    await user.click(item("Acme"));
+
+    await user.click(
+      topBar().getByRole("button", { name: "Options for the folder Acme" }),
+    );
+    await user.click(screen.getByRole("menuitem", { name: "Rename…" }));
+    const field = screen.getByRole("textbox", { name: "Name" });
+    expect(field).toHaveValue("Acme");
+    await user.clear(field);
+    await user.type(field, "Acme Corp{Enter}");
+    expect(await heading("Acme Corp")).toBeInTheDocument();
+    expect(item("Acme Corp")).toHaveAttribute("aria-current", "page");
+    expect((await mockApi.getMeeting("standup")).collection).toBe("Acme Corp");
+
+    await user.click(
+      topBar().getByRole("button", {
+        name: "Options for the folder Acme Corp",
+      }),
+    );
+    await user.click(screen.getByRole("menuitem", { name: "Delete…" }));
+    expect(
+      screen.getByText(/Its 2 meetings, with notes and transcripts/),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Move to Trash" }));
+
+    expect(await heading("Meetings")).toBeInTheDocument();
+    expect(await mockApi.listCollections()).toEqual(["Hiring"]);
+    await waitFor(() =>
+      expect(sidebar().queryByRole("button", { name: "Acme Corp" })).toBeNull(),
+    );
   });
 });

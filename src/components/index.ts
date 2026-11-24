@@ -18,10 +18,13 @@ export { IconButton, type IconButtonProps } from "./IconButton";
 export {
   CheckIcon,
   ChevronLeftIcon,
+  FolderIcon,
   ChevronUpDownIcon,
   GearIcon,
+  InboxIcon,
   MoreIcon,
   PlusIcon,
+  StackIcon,
   StopIcon,
   TranscriptIcon,
   TrashIcon,
@@ -33,3 +36,4 @@ export { type MenuItem, MenuButton, type MenuButtonProps } from "./MenuButton";
 export { focusListRow } from "./listFocus";
 export { ModelList, ModelRow, type ModelRowProps } from "./ModelRow";
 export { Screen, type ScreenProps } from "./Screen";
+export { SettingsInSidebarContext } from "./shellChrome";

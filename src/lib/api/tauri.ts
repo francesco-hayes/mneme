@@ -70,13 +70,21 @@ export const tauriApi: Api = {
   listMeetings: () => call<MeetingSummary[]>("list_meetings"),
   getMeeting: (id) => call<Meeting>("get_meeting", { id }),
   getTranscript: (id) => call<TranscriptLine[]>("get_transcript", { id }),
-  startMeeting: () => call<Meeting>("start_meeting"),
+  startMeeting: (collection = null) =>
+    call<Meeting>("start_meeting", { collection }),
   stopMeeting: () => call<Meeting>("stop_meeting"),
   saveNotes: (id, notes) => call<MeetingSummary>("save_notes", { id, notes }),
   renameMeeting: (id, title) =>
     call<MeetingSummary>("rename_meeting", { id, title }),
   showInFinder: (id) => call<void>("show_in_finder", { id }),
   deleteMeeting: (id) => call<void>("delete_meeting", { id }),
+  moveMeeting: (id, collection) =>
+    call<MeetingSummary>("move_meeting", { id, collection }),
+  listCollections: () => call<string[]>("list_collections"),
+  createCollection: (name) => call<string>("create_collection", { name }),
+  renameCollection: (name, newName) =>
+    call<string>("rename_collection", { name, newName }),
+  deleteCollection: (name) => call<void>("delete_collection", { name }),
   getRecordingState: () => call<RecordingState>("get_recording_state"),
   onRecordingState: (cb) =>
     subscribe<RecordingState>(RECORDING_STATE_EVENT, cb),

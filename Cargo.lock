@@ -2186,7 +2186,7 @@ dependencies = [
 
 [[package]]
 name = "mneme"
-version = "0.1.0"
+version = "0.2.0-beta.1"
 dependencies = [
  "mneme-audio",
  "mneme-core",
@@ -2204,7 +2204,7 @@ dependencies = [
 
 [[package]]
 name = "mneme-audio"
-version = "0.1.0"
+version = "0.2.0-beta.1"
 dependencies = [
  "block2",
  "cpal",
@@ -2223,7 +2223,7 @@ dependencies = [
 
 [[package]]
 name = "mneme-core"
-version = "0.1.0"
+version = "0.2.0-beta.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -2231,7 +2231,7 @@ dependencies = [
 
 [[package]]
 name = "mneme-pipeline"
-version = "0.1.0"
+version = "0.2.0-beta.1"
 dependencies = [
  "mneme-audio",
  "mneme-core",
@@ -2242,7 +2242,7 @@ dependencies = [
 
 [[package]]
 name = "mneme-store"
-version = "0.1.0"
+version = "0.2.0-beta.1"
 dependencies = [
  "chrono",
  "mneme-core",
@@ -2256,7 +2256,7 @@ dependencies = [
 
 [[package]]
 name = "mneme-transcribe"
-version = "0.1.0"
+version = "0.2.0-beta.1"
 dependencies = [
  "hound",
  "mneme-core",

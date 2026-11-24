@@ -47,14 +47,14 @@ async function loadTauriApi(): Promise<Api> {
 test("every method of the Tauri implementation calls its backend command", async () => {
   const tauriApi = await loadTauriApi();
   const methods = Object.keys(tauriApi) as (keyof Api)[];
-  expect(methods).toHaveLength(23);
+  expect(methods).toHaveLength(28);
 
   invoke.mockResolvedValue("result");
   const calls: [Promise<unknown>, string, Record<string, unknown>?][] = [
     [tauriApi.listMeetings(), "list_meetings"],
     [tauriApi.getMeeting("m1"), "get_meeting", { id: "m1" }],
     [tauriApi.getTranscript("m1"), "get_transcript", { id: "m1" }],
-    [tauriApi.startMeeting(), "start_meeting"],
+    [tauriApi.startMeeting("Acme"), "start_meeting", { collection: "Acme" }],
     [tauriApi.stopMeeting(), "stop_meeting"],
     [tauriApi.saveNotes("m1", "n"), "save_notes", { id: "m1", notes: "n" }],
     [
@@ -64,6 +64,19 @@ test("every method of the Tauri implementation calls its backend command", async
     ],
     [tauriApi.showInFinder("m1"), "show_in_finder", { id: "m1" }],
     [tauriApi.deleteMeeting("m1"), "delete_meeting", { id: "m1" }],
+    [
+      tauriApi.moveMeeting("m1", "Acme"),
+      "move_meeting",
+      { id: "m1", collection: "Acme" },
+    ],
+    [tauriApi.listCollections(), "list_collections"],
+    [tauriApi.createCollection("A"), "create_collection", { name: "A" }],
+    [
+      tauriApi.renameCollection("A", "B"),
+      "rename_collection",
+      { name: "A", newName: "B" },
+    ],
+    [tauriApi.deleteCollection("A"), "delete_collection", { name: "A" }],
     [tauriApi.getRecordingState(), "get_recording_state"],
     [tauriApi.listModels(), "list_models"],
     [tauriApi.downloadModel("base"), "download_model", { id: "base" }],

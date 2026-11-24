@@ -1,9 +1,10 @@
-import type { ReactNode } from "react";
+import { type ReactNode, useContext } from "react";
 import { cx } from "../lib/cx";
 import { useNavigation } from "../state/navigation";
 import { IconButton } from "./IconButton";
 import { ChevronLeftIcon, GearIcon } from "./icons";
 import styles from "./Screen.module.css";
+import { SettingsInSidebarContext } from "./shellChrome";
 
 export interface ScreenProps {
   /**
@@ -15,7 +16,7 @@ export interface ScreenProps {
   actions?: ReactNode;
   /** Whether to show the Back button. Default: whenever there is a screen to go back to. */
   back?: boolean;
-  /** Whether to show the Settings button. Default true. */
+  /** Whether to show the Settings button. Default true; the shell's sidebar has its own. */
   settings?: boolean;
   /**
    * `column` (default) centers the content in a readable, scrolling column.
@@ -40,6 +41,7 @@ export function Screen({
 }: ScreenProps) {
   const navigation = useNavigation();
   const showBack = back ?? navigation.canGoBack;
+  const settingsInSidebar = useContext(SettingsInSidebarContext);
 
   return (
     <div className={styles.screen}>
@@ -58,7 +60,7 @@ export function Screen({
         </div>
         <div className={styles.actions}>
           {actions}
-          {settings && (
+          {settings && !settingsInSidebar && (
             <IconButton
               label="Settings"
               onClick={() => navigation.navigate({ name: "settings" })}

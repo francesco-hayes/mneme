@@ -53,8 +53,14 @@ pub async fn get_transcript(
 }
 
 #[tauri::command]
-pub async fn start_meeting(state: State<'_, AppState>) -> CommandResult<dto::Meeting> {
-    run(state, |core| core.start_meeting()).await
+pub async fn start_meeting(
+    state: State<'_, AppState>,
+    collection: Option<String>,
+) -> CommandResult<dto::Meeting> {
+    run(state, move |core| {
+        core.start_meeting_in(collection.as_deref())
+    })
+    .await
 }
 
 #[tauri::command]
@@ -88,6 +94,42 @@ pub async fn show_in_finder(state: State<'_, AppState>, id: String) -> CommandRe
 #[tauri::command]
 pub async fn delete_meeting(state: State<'_, AppState>, id: String) -> CommandResult<()> {
     run(state, move |core| core.delete_meeting(&id)).await
+}
+
+#[tauri::command]
+pub async fn move_meeting(
+    state: State<'_, AppState>,
+    id: String,
+    collection: Option<String>,
+) -> CommandResult<dto::MeetingSummary> {
+    run(state, move |core| {
+        core.move_meeting(&id, collection.as_deref())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn list_collections(state: State<'_, AppState>) -> CommandResult<Vec<String>> {
+    run(state, |core| core.list_collections()).await
+}
+
+#[tauri::command]
+pub async fn create_collection(state: State<'_, AppState>, name: String) -> CommandResult<String> {
+    run(state, move |core| core.create_collection(&name)).await
+}
+
+#[tauri::command]
+pub async fn rename_collection(
+    state: State<'_, AppState>,
+    name: String,
+    new_name: String,
+) -> CommandResult<String> {
+    run(state, move |core| core.rename_collection(&name, &new_name)).await
+}
+
+#[tauri::command]
+pub async fn delete_collection(state: State<'_, AppState>, name: String) -> CommandResult<()> {
+    run(state, move |core| core.delete_collection(&name)).await
 }
 
 #[tauri::command]

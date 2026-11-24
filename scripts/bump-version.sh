@@ -4,7 +4,7 @@
 #
 # Usage:
 #   pnpm bump 0.2.0
-#   scripts/bump-version.sh 0.2.0
+#   pnpm bump 0.2.0-beta.1     a beta: its draft is marked as a pre-release
 #
 # Commit the result and push it to main. The Release workflow sees the new
 # version, builds the app and makes a draft release for v0.2.0 (see

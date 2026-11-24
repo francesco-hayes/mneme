@@ -343,13 +343,18 @@ impl AppCore {
 
     fn meeting_dto(&self, store: &Store, id: &MeetingId) -> Result<dto::Meeting> {
         let meeting = store.load_meeting(id).map_err(msg)?;
-        Ok(dto::Meeting::from_store(&meeting, self.live(id).is_some()))
+        Ok(dto::Meeting::from_store(
+            &meeting,
+            store.root(),
+            self.live(id).is_some(),
+        ))
     }
 
     // ---- Meetings ----
 
     pub fn list_meetings(&self) -> Result<Vec<dto::MeetingSummary>> {
-        let list = self.store().list_meetings().map_err(msg)?;
+        let store = self.store();
+        let list = store.list_meetings().map_err(msg)?;
         for warning in &list.warnings {
             log(format_args!("meetings: {warning}"));
         }
@@ -357,7 +362,9 @@ impl AppCore {
         Ok(list
             .meetings
             .iter()
-            .map(|m| dto::MeetingSummary::from_store(m, live_id.as_ref() == Some(&m.id)))
+            .map(|m| {
+                dto::MeetingSummary::from_store(m, store.root(), live_id.as_ref() == Some(&m.id))
+            })
             .collect())
     }
 
@@ -397,6 +404,7 @@ impl AppCore {
         }
         Ok(dto::MeetingSummary::from_store(
             &saved.meeting,
+            self.store().root(),
             live.is_some(),
         ))
     }
@@ -407,9 +415,11 @@ impl AppCore {
             return Err("The title cannot be empty.".to_owned());
         }
         let id = MeetingId::from(id);
-        let summary = self.store().rename_meeting(&id, title).map_err(msg)?;
+        let store = self.store();
+        let summary = store.rename_meeting(&id, title).map_err(msg)?;
         Ok(dto::MeetingSummary::from_store(
             &summary,
+            store.root(),
             self.live(&id).is_some(),
         ))
     }
@@ -439,6 +449,78 @@ impl AppCore {
         Ok(())
     }
 
+    /// Moves a meeting into a collection, or out to the root with `None`.
+    /// Refused while it is being recorded or stopped.
+    pub fn move_meeting(&self, id: &str, collection: Option<&str>) -> Result<dto::MeetingSummary> {
+        let id = MeetingId::from(id);
+        // Held across the move, as for a delete.
+        let recording = self.recording();
+        if recording.live().is_some_and(|live| live.meeting_id == id) {
+            return Err(
+                "This meeting is being recorded. Stop the recording before moving it.".to_owned(),
+            );
+        }
+        let store = self.store();
+        let summary = store.move_meeting(&id, collection).map_err(msg)?;
+        drop(recording);
+        Ok(dto::MeetingSummary::from_store(
+            &summary,
+            store.root(),
+            false,
+        ))
+    }
+
+    // ---- Collections (folders of meetings) ----
+
+    pub fn list_collections(&self) -> Result<Vec<String>> {
+        self.store().list_collections().map_err(msg)
+    }
+
+    pub fn create_collection(&self, name: &str) -> Result<String> {
+        self.store().create_collection(name).map_err(msg)
+    }
+
+    /// Renames a collection. Refused while the live meeting is in it.
+    pub fn rename_collection(&self, name: &str, new_name: &str) -> Result<String> {
+        let recording = self.recording();
+        self.refuse_if_live_in(&recording, name, "renaming")?;
+        let renamed = self
+            .store()
+            .rename_collection(name, new_name)
+            .map_err(msg)?;
+        drop(recording);
+        Ok(renamed)
+    }
+
+    /// Moves a collection, with its meetings, to the Trash. Refused while
+    /// the live meeting is in it.
+    pub fn delete_collection(&self, name: &str) -> Result<()> {
+        let recording = self.recording();
+        self.refuse_if_live_in(&recording, name, "deleting")?;
+        let folder = self.store().collection_folder(name).map_err(msg)?;
+        self.host.trash(&folder)?;
+        drop(recording);
+        Ok(())
+    }
+
+    /// Fails if the meeting this run is recording or stopping is in the
+    /// collection `name`. The caller holds the recording lock.
+    fn refuse_if_live_in(&self, recording: &Recording, name: &str, doing: &str) -> Result<()> {
+        let Some(live) = recording.live() else {
+            return Ok(());
+        };
+        let store = self.store();
+        let in_it = store
+            .meeting(&live.meeting_id)
+            .is_ok_and(|meeting| meeting.collection(store.root()) == Some(name));
+        if in_it {
+            return Err(format!(
+                "A meeting in this folder is being recorded. Stop the recording before {doing} the folder."
+            ));
+        }
+        Ok(())
+    }
+
     // ---- Recording ----
 
     pub fn recording_state(&self) -> dto::RecordingState {
@@ -459,6 +541,13 @@ impl AppCore {
     /// System audio that cannot be captured does not stop the meeting: the
     /// session records the microphone alone.
     pub fn start_meeting(self: &Arc<Self>) -> Result<dto::Meeting> {
+        self.start_meeting_in(None)
+    }
+
+    /// [`start_meeting`](Self::start_meeting) with the new meeting created
+    /// in a collection (`None`: the root). A collection that is gone fails
+    /// the start before anything is recorded.
+    pub fn start_meeting_in(self: &Arc<Self>, collection: Option<&str>) -> Result<dto::Meeting> {
         let (model_id, model_path) = {
             let mut recording = self.recording();
             if self.quitting.load(Ordering::SeqCst) {
@@ -478,7 +567,7 @@ impl AppCore {
         self.emit_state();
         self.host.starting();
 
-        match self.start_session(&model_id, &model_path) {
+        match self.start_session(&model_id, &model_path, collection) {
             Ok((live, engine)) => {
                 let (id, store) = (live.meeting_id.clone(), live.store.clone());
                 self.set_recording(Recording::Active { live, engine });
@@ -518,6 +607,7 @@ impl AppCore {
         &self,
         model_id: &str,
         model_path: &Path,
+        collection: Option<&str>,
     ) -> Result<(Live, Arc<dyn Transcriber>)> {
         let microphone = match self.host.microphone_permission() {
             PermissionStatus::NotDetermined => self.host.request_microphone_permission(),
@@ -542,12 +632,15 @@ impl AppCore {
 
         let store = self.store();
         let meeting = store
-            .create_meeting(NewMeeting {
-                started_at: StartTime::now_local(),
-                model: Some(model_id.to_owned()),
-                // v1 is English only, whatever the settings file says.
-                language: Some(Language::english().as_str().to_owned()),
-            })
+            .create_meeting_in(
+                NewMeeting {
+                    started_at: StartTime::now_local(),
+                    model: Some(model_id.to_owned()),
+                    // v1 is English only, whatever the settings file says.
+                    language: Some(Language::english().as_str().to_owned()),
+                },
+                collection,
+            )
             .map_err(msg)?;
 
         let started = store
@@ -839,7 +932,7 @@ impl AppCore {
             log(format_args!("renaming the folder of {id}: {error}"));
         }
         let meeting = live.store.load_meeting(id).map_err(msg)?;
-        Ok(dto::Meeting::from_store(&meeting, false))
+        Ok(dto::Meeting::from_store(&meeting, live.store.root(), false))
     }
 
     /// Drops this engine from the warm cache, if it is the one there.

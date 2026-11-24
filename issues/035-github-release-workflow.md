@@ -22,8 +22,8 @@ Decided the same day:
 
 ## Manual checks
 
-- [ ] `pnpm bump` to a new version, push to `main`, and watch the workflow finish with a tag and a draft release holding the three files; publish it.
-- [ ] Push a change that does not touch the version: the run stops after the check job.
+- [x] Push a new version to `main` and watch the workflow finish with a tag and a draft release holding the three files. Done 2026-11-24 for 0.1.0 (see Result). Publishing it is Francesco's step.
+- [x] Push a change that does not touch the version: the run stops after the check job. Seen 2026-11-24 on the push of `7eecafc`, while `v0.1.0` was still tagged.
 - [ ] On another Apple Silicon Mac, or this one after deleting the local build: download the DMG in a browser, drag to Applications, open, use Open Anyway, record a short meeting.
 
 ## Result
@@ -43,9 +43,10 @@ Decided the same day:
 
 **Changed again the same day:** Francesco asked not to make tags at all. The workflow now runs on every push to `main`: a check job on Linux reads the version and stops unless `v<version>` is new, then the Mac job builds, creates the tag through the API with the workflow token (so no other workflow starts, and publishing the draft makes no new tag), and creates the draft. The tag-push trigger was removed. `scripts/bump-version.sh` (`pnpm bump`) was added and tried on a throwaway worktree: 0.1.0 to 0.1.1 changed `Cargo.toml`, `package.json` and six crates in `Cargo.lock`, `cargo metadata --locked` agreed, the same version again exits 1, `banana` exits 2. The flow diagram was checked rendered in light and dark.
 
+**First run on GitHub (2026-11-24):** the v0.1.0 release made the old way was cancelled and deleted with its tag. Re-running the push run of `7eecafc` then went through the new flow: check job 5 s, Mac job 5 min 40 s (no cache yet). It created tag `v0.1.0` at `7eecafc` and a draft "Mneme 0.1.0" with `Mneme-0.1.0-macos-arm64.dmg` (5.5 MiB), `Mneme-0.1.0-macos-arm64.zip` (5.5 MiB) and `SHA256SUMS.txt`.
+
 **Not verified**
 
-- The workflow has not run on GitHub. Action versions and commit hashes were looked up on GitHub the same day; the runner's tool versions (cmake, jq, Xcode) are assumed from GitHub's macOS 15 image.
 - The downloaded, quarantined app has not been opened through Open Anyway, and its permission prompts have not been seen in that state.
 
 **Follow-ups**

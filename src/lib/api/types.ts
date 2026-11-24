@@ -6,7 +6,7 @@
 export type MeetingStatus = 'recording' | 'complete' | 'interrupted';
 export type Permission = 'granted' | 'denied' | 'undetermined';
 
-export interface MeetingSummary { id: string; title: string; startedAt: string; durationSecs: number | null; status: MeetingStatus }
+export interface MeetingSummary { id: string; title: string; startedAt: string; durationSecs: number | null; status: MeetingStatus; collection: string | null }
 export interface Meeting extends MeetingSummary { notes: string; transcriptLineCount: number; folderPath: string }
 export interface TranscriptLine { t: string; speaker: 'Me' | 'Them'; text: string }
 export interface ModelInfo { id: string; name: string; sizeBytes: number; note: string; englishOnly: boolean; installed: boolean }
@@ -21,12 +21,17 @@ export interface Api {
   listMeetings(): Promise<MeetingSummary[]>;
   getMeeting(id: string): Promise<Meeting>;
   getTranscript(id: string): Promise<TranscriptLine[]>;
-  startMeeting(): Promise<Meeting>;
+  startMeeting(collection?: string | null): Promise<Meeting>;
   stopMeeting(): Promise<Meeting>;
   saveNotes(id: string, notes: string): Promise<MeetingSummary>;
   renameMeeting(id: string, title: string): Promise<MeetingSummary>;
   showInFinder(id: string): Promise<void>;
   deleteMeeting(id: string): Promise<void>;
+  moveMeeting(id: string, collection: string | null): Promise<MeetingSummary>;
+  listCollections(): Promise<string[]>;
+  createCollection(name: string): Promise<string>;
+  renameCollection(name: string, newName: string): Promise<string>;
+  deleteCollection(name: string): Promise<void>;
   getRecordingState(): Promise<RecordingState>;
   onRecordingState(cb: (s: RecordingState) => void): () => void;
   onRecordingError(cb: (e: RecordingError) => void): () => void;
