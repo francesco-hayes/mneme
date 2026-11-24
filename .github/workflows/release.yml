@@ -1,8 +1,11 @@
-# Builds the Mac app and attaches it to a GitHub release.
+# Builds the Mac app and attaches it to a draft GitHub release.
 #
-# Runs when a release is published (or by hand for an existing tag, to rebuild
-# its files). The tag must match the app version in Cargo.toml and
-# package.json, with or without a leading "v": tag v0.2.0 for version 0.2.0.
+# Runs when a version tag is pushed (v0.2.0). It creates a draft release for
+# that tag with the files attached, or adds them to a release that already
+# exists for it. You then write the notes and publish the draft, so a release
+# is never public without its download. It can also be run by hand for an
+# existing tag, to rebuild its files. The tag must match the app version in
+# Cargo.toml and package.json: tag v0.2.0 for version 0.2.0.
 #
 # The app is signed ad hoc, not with a Developer ID, and not notarized: there
 # is no Apple Developer account yet. People who download it approve it once in
@@ -15,8 +18,8 @@
 name: Release
 
 on:
-  release:
-    types: [published]
+  push:
+    tags: ["v*"]
   workflow_dispatch:
     inputs:
       tag:
@@ -27,7 +30,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: release-${{ github.event.release.tag_name || inputs.tag }}
+  group: release-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -36,7 +39,7 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 60
     env:
-      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      TAG: ${{ inputs.tag || github.ref_name }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -100,5 +103,16 @@ jobs:
           shasum -a 256 -- *.dmg *.zip > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
-      - name: Upload to the release
-        run: gh release upload "$TAG" dist-release/* --clobber --repo "$GITHUB_REPOSITORY"
+      - name: Attach to the release
+        run: |
+          existing="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 \
+            --json tagName,isDraft --jq ".[] | select(.tagName == \"$TAG\") | .isDraft")"
+          if [ -n "$existing" ]; then
+            echo "Release $TAG exists (draft: $existing), replacing its files."
+            gh release upload "$TAG" dist-release/* --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            echo "Creating draft release $TAG."
+            gh release create "$TAG" dist-release/* --repo "$GITHUB_REPOSITORY" \
+              --draft --verify-tag --title "Mneme $VERSION" \
+              --notes "Draft built from $TAG. Replace this with the release notes, check the files below, then publish."
+          fi

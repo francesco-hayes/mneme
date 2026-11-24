@@ -73,22 +73,34 @@ codesign -d -r- target/debug/bundle/macos/Mneme.app            # requirement nam
 
 ## GitHub release
 
-Publishing a release on GitHub builds the Mac app and attaches it to that release. This needs no Apple account and no secrets. The workflow is `.github/workflows/release.yml`.
+Pushing a version tag builds the Mac app and puts it in a draft release on GitHub. You write the notes and publish the draft, so the release is never public without its download. This needs no Apple account and no secrets. The workflow is `.github/workflows/release.yml`.
 
 ### Make one
 
 1. Set the version in two places, the same in both: `version` under `[workspace.package]` in `Cargo.toml`, and `version` in `package.json`. Commit and push.
-2. On GitHub, Releases, Draft a new release. Create a tag for that commit named after the version, for example `v0.2.0` (a leading `v` is optional). Write the notes and publish.
-3. The Release workflow starts (Actions tab) and takes about 15–25 minutes. When it finishes, the release has three files:
+2. Tag that commit with the version and push the tag:
+
+   ```sh
+   git tag v0.2.0
+   git push origin v0.2.0
+   ```
+
+   The tag must start with `v` for the workflow to run.
+
+3. The Release workflow starts (Actions tab) and takes about 15–25 minutes. When it finishes, there is a draft release named "Mneme 0.2.0" on the Releases page with three files:
    - `Mneme-<version>-macos-arm64.dmg`, the download for most people
    - `Mneme-<version>-macos-arm64.zip`, the same app zipped
    - `SHA256SUMS.txt`
 
-If the tag does not match the version, the workflow stops with an error saying so and uploads nothing. Fix the version, then either delete the release and tag and make them again, or run the workflow by hand: Actions, Release, Run workflow, and give it the tag. A run by hand replaces the files already on that release.
+4. Edit the draft: replace the placeholder text with the release notes, check the files are there, and publish.
+
+If a release for the tag already exists, draft or published, the workflow adds the files to it instead of making a new one. So drafting the notes on GitHub first, with the same tag, also works.
+
+If the tag does not match the version, the workflow stops with an error saying so and uploads nothing. Fix the version, delete the tag (`git push origin :v0.2.0` and `git tag -d v0.2.0`), and tag again. To rebuild the files of an existing tag: Actions, Release, Run workflow, and give it the tag. That replaces the files already on its release.
 
 ### What it does
 
-On a GitHub-hosted Apple Silicon Mac (`macos-15`): installs Node 24, pnpm (the version in `package.json`) and stable Rust, checks the tag against the version, runs the [local-only audit](#local-only-audit), builds with `pnpm tauri build --config src-tauri/tauri.github-release.conf.json`, checks the signature, and uploads the files with `gh release upload`. The actions it uses are pinned to commit hashes.
+On a GitHub-hosted Apple Silicon Mac (`macos-15`): installs Node 24, pnpm (the version in `package.json`) and stable Rust, checks the tag against the version, runs the [local-only audit](#local-only-audit), builds with `pnpm tauri build --config src-tauri/tauri.github-release.conf.json`, checks the signature, and creates the draft release with the files, or adds them to the existing release for the tag, with `gh release`. The actions it uses are pinned to commit hashes.
 
 The overlay `src-tauri/tauri.github-release.conf.json` adds the disk image to the bundle targets and signs the app ad hoc (`signingIdentity: "-"`) with the hardened runtime off, the same way as an unsigned local build. An ad hoc signature seals the bundle, which a downloaded app on Apple Silicon needs to open at all, but it names no developer, so Gatekeeper blocks the first launch until the user chooses Open Anyway (README, "Install"). Permissions stay granted across launches of one download; a new version asks again, because its signature is different.
 
