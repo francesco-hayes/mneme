@@ -870,12 +870,14 @@ fn a_meeting_the_store_knows_is_found_without_reading_the_whole_root() {
     let by_id: Vec<Result<(), Error>> = vec![
         by_list.meeting(&meeting.id).map(drop),
         by_list.load_meeting(&listed.id).map(drop),
-        by_list.save_notes(&meeting.id, "saved without a scan\n"),
+        by_list
+            .save_notes(&meeting.id, "saved without a scan\n")
+            .map(drop),
         by_list.transcript_line_count(&looked_up.id).map(drop),
         by_lookup.meeting(&looked_up.id).map(drop),
         by_lookup.notes(&listed.id).map(drop),
         store.notes(&created_here.id).map(drop),
-        store.save_notes(&created_here.id, "also saved\n"),
+        store.save_notes(&created_here.id, "also saved\n").map(drop),
     ];
     let unknown = store.meeting(&MeetingId::new("no-such-id"));
     fs::set_permissions(store.root(), listable).unwrap();
@@ -948,8 +950,11 @@ fn loading_a_meeting_gives_its_summary_notes_and_line_count() {
         store.transcript(&meeting.id).unwrap().lines.len()
     );
 
+    // The notes' `# Agenda` named the meeting, and the stop moved its
+    // folder to match.
+    assert_eq!(finished.title, "Agenda");
     // A transcript deleted by hand is an empty one.
-    fs::remove_file(meeting.transcript_path()).unwrap();
+    fs::remove_file(finished.transcript_path()).unwrap();
     assert_eq!(
         store
             .load_meeting(&meeting.id)

@@ -166,7 +166,7 @@ fn a_meeting_left_recording_becomes_interrupted_with_a_sorted_transcript_and_its
 
     record(&store, &meeting.id, &SEGMENTS);
     store
-        .save_notes_at(&meeting.id, "# Agenda\n- ask Ana about the API\n", 90_000)
+        .save_notes_at(&meeting.id, "## Agenda\n- ask Ana about the API\n", 90_000)
         .unwrap();
     // The user's own property in the frontmatter, and the line the app was
     // writing when it died: cut off inside its timestamp.
@@ -242,7 +242,7 @@ fn a_meeting_left_recording_becomes_interrupted_with_a_sorted_transcript_and_its
     assert_eq!(list.meetings[0].duration_secs, Some(310));
     let loaded = store.load_meeting(&meeting.id).unwrap();
     assert_eq!(loaded.transcript_line_count, 5);
-    assert_eq!(loaded.notes, "# Agenda\n- ask Ana about the API\n");
+    assert_eq!(loaded.notes, "## Agenda\n- ask Ana about the API\n");
     // The meeting that was finished properly was not touched.
     assert_eq!(list.meetings[1].status, MeetingStatus::Complete);
     assert_eq!(list.meetings[1].duration_secs, Some(600));

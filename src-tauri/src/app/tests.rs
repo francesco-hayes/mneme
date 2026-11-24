@@ -727,8 +727,11 @@ fn notes_title_and_finder_work_on_a_meeting_that_is_not_recording() {
     let id = f.core.start_meeting().unwrap().summary.id;
     let finished = f.core.stop_meeting().unwrap();
 
-    f.core.save_notes(&id, "# Agenda\n").unwrap();
+    // The first heading names a meeting that has its default title.
+    let saved = f.core.save_notes(&id, "# Agenda\n").unwrap();
+    assert_eq!(saved.title, "Agenda");
     assert_eq!(f.core.get_meeting(&id).unwrap().notes.trim(), "# Agenda");
+    assert_eq!(f.core.list_meetings().unwrap()[0].title, "Agenda");
     assert!(f.core.save_notes("no-such-meeting", "x").is_err());
 
     assert_eq!(

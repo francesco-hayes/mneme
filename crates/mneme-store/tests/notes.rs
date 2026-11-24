@@ -133,20 +133,22 @@ fn a_new_meeting_has_an_empty_body() {
 
 #[test]
 fn a_saved_body_is_read_back_and_sits_right_after_the_frontmatter() {
+    // A `##` heading: only a level-one heading names the meeting, which
+    // would change the frontmatter (see the title tests below).
     let (_dir, store, meeting) = recording();
     let frontmatter = text_of(&meeting.notes_path());
 
     store
-        .save_notes(&meeting.id, "# Standup\n\n- one\n- two\n")
+        .save_notes(&meeting.id, "## Standup\n\n- one\n- two\n")
         .unwrap();
 
     assert_eq!(
         text_of(&meeting.notes_path()),
-        format!("{frontmatter}# Standup\n\n- one\n- two\n")
+        format!("{frontmatter}## Standup\n\n- one\n- two\n")
     );
     assert_eq!(
         store.notes(&meeting.id).unwrap(),
-        "# Standup\n\n- one\n- two\n"
+        "## Standup\n\n- one\n- two\n"
     );
     // Only the three files: no temp file is left behind.
     assert_eq!(
@@ -341,7 +343,7 @@ fn notes_of_an_unknown_meeting_are_not_found_and_nothing_is_created() {
 
     for result in [
         store.notes(&unknown).map(|_| ()),
-        store.save_notes(&unknown, "text"),
+        store.save_notes(&unknown, "text").map(|_| ()),
         store.save_notes_at(&unknown, "text", 1_000).map(|_| ()),
     ] {
         let err = result.unwrap_err();
@@ -1017,4 +1019,144 @@ fn notes_and_the_transcript_do_not_disturb_each_other() {
         ]
     );
     assert_eq!(store.notes(&meeting.id).unwrap(), "- a note\n- another\n");
+}
+
+// ---- The title follows the first heading ----
+
+#[test]
+fn the_first_heading_names_an_untitled_meeting_and_its_folder_moves_after_stop() {
+    let (_dir, store, meeting) = recording();
+    let folder = meeting.folder.clone();
+
+    let saved = store
+        .save_notes_at(&meeting.id, "# Weekly sync\n\n- one\n", 1_000)
+        .unwrap();
+    assert!(saved.title_changed);
+    assert_eq!(saved.meeting.title, "Weekly sync");
+    assert!(saved.meeting.title_edited);
+    // Recording: the folder waits.
+    assert_eq!(saved.meeting.folder, folder);
+    assert!(saved.rename_error.is_none());
+    assert!(text_of(&meeting.notes_path()).contains("title: Weekly sync\n"));
+
+    // Editing the heading renames it again.
+    let saved = store
+        .save_notes_at(&meeting.id, "# Weekly sync with Ana\n\n- one\n", 2_000)
+        .unwrap();
+    assert_eq!(saved.meeting.title, "Weekly sync with Ana");
+
+    let finished = store.finish_meeting(&meeting.id, 60).unwrap().meeting;
+    assert_eq!(
+        finished.folder.file_name().unwrap().to_str().unwrap(),
+        format!(
+            "{} Weekly sync with Ana",
+            &folder.file_name().unwrap().to_str().unwrap()[..15]
+        )
+    );
+}
+
+#[test]
+fn after_the_meeting_the_folder_moves_with_the_heading_at_once() {
+    let (_dir, store, meeting) = recording();
+    store.finish_meeting(&meeting.id, 60).unwrap();
+
+    let saved = store.save_notes(&meeting.id, "# Retro\n").unwrap();
+    assert_eq!(saved.meeting.title, "Retro");
+    assert!(saved.meeting.folder.ends_with(format!(
+        "{} Retro",
+        &meeting.folder.file_name().unwrap().to_str().unwrap()[..15]
+    )));
+    assert!(saved.meeting.folder.is_dir());
+    assert!(!meeting.folder.exists());
+    assert_eq!(store.meeting(&meeting.id).unwrap(), saved.meeting);
+    assert_eq!(store.notes(&meeting.id).unwrap(), "# Retro\n");
+}
+
+#[test]
+fn a_title_typed_by_hand_is_not_replaced_by_the_heading() {
+    let (_dir, store, meeting) = recording();
+    store.rename_meeting(&meeting.id, "Board prep").unwrap();
+
+    let saved = store
+        .save_notes_at(&meeting.id, "# Agenda\n", 1_000)
+        .unwrap();
+    assert!(!saved.title_changed);
+    assert_eq!(saved.meeting.title, "Board prep");
+}
+
+#[test]
+fn a_title_taken_from_the_heading_stops_following_once_typed_over() {
+    let (_dir, store, meeting) = recording();
+    store
+        .save_notes_at(&meeting.id, "# Agenda\n", 1_000)
+        .unwrap();
+    store.rename_meeting(&meeting.id, "Board prep").unwrap();
+
+    let saved = store
+        .save_notes_at(&meeting.id, "# Agenda for Monday\n", 2_000)
+        .unwrap();
+    assert_eq!(saved.meeting.title, "Board prep");
+}
+
+#[test]
+fn notes_without_a_heading_leave_the_title_alone() {
+    let (_dir, store, meeting) = recording();
+    store
+        .save_notes_at(&meeting.id, "# Agenda\n", 1_000)
+        .unwrap();
+
+    let saved = store
+        .save_notes_at(&meeting.id, "just notes\n", 2_000)
+        .unwrap();
+    assert!(!saved.title_changed);
+    assert_eq!(saved.meeting.title, "Agenda");
+}
+
+#[test]
+fn a_folder_name_that_is_taken_does_not_fail_the_save() {
+    let (_dir, store, meeting) = recording();
+    store.finish_meeting(&meeting.id, 60).unwrap();
+    let taken = meeting.folder.with_file_name(format!(
+        "{} Retro",
+        &meeting.folder.file_name().unwrap().to_str().unwrap()[..15]
+    ));
+    fs::create_dir(&taken).unwrap();
+
+    let saved = store.save_notes(&meeting.id, "# Retro\n").unwrap();
+    assert_eq!(saved.meeting.title, "Retro");
+    assert!(saved.rename_error.is_some());
+    assert_eq!(saved.meeting.folder, meeting.folder);
+    assert_eq!(store.notes(&meeting.id).unwrap(), "# Retro\n");
+}
+
+#[test]
+fn which_line_is_the_title() {
+    use mneme_store::heading_title;
+    let cases: &[(&str, Option<&str>)] = &[
+        ("# Standup", Some("Standup")),
+        (
+            "notes first\n\n# Later heading\n# Second",
+            Some("Later heading"),
+        ),
+        ("   # Indented three", Some("Indented three")),
+        ("    # Indented four is code", None),
+        ("## Not level one", None),
+        ("#hashtag", None),
+        ("#\n# Real one", Some("Real one")),
+        ("# Closed ##", Some("Closed")),
+        ("# C#", Some("C#")),
+        ("#\tTabbed", Some("Tabbed")),
+        ("# Spaced   out  ", Some("Spaced out")),
+        (
+            "```sh\n# comment\n```\n# After the code",
+            Some("After the code"),
+        ),
+        ("~~~\n# inside\n~~~~\n", None),
+        ("````\n```\n# still inside\n````\n# Out", Some("Out")),
+        ("Setext\n===", None),
+        ("", None),
+    ];
+    for (body, expected) in cases {
+        assert_eq!(heading_title(body).as_deref(), *expected, "{body:?}");
+    }
 }

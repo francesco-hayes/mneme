@@ -1,5 +1,6 @@
 import { fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import type { MeetingSummary } from "../lib/api";
 import { mockApi } from "../lib/api/mock";
 import type { MockMeetingSeed } from "../lib/api/mockSeed";
 import {
@@ -83,13 +84,23 @@ const savedNotes = async (meetingId = "retro") =>
   (await mockApi.getMeeting(meetingId)).notes;
 
 /** A promise settled by hand, to hold a save in flight. */
+/**
+ * A save held back until the test lets it go. It then answers as the backend
+ * does, with the meeting: the live one, or the seeded "retro".
+ */
 function deferred() {
-  let resolve!: () => void;
+  let settle!: (meeting: MeetingSummary) => void;
   let reject!: (error: Error) => void;
-  const promise = new Promise<void>((res, rej) => {
-    resolve = res;
+  const promise = new Promise<MeetingSummary>((res, rej) => {
+    settle = res;
     reject = rej;
   });
+  const resolve = () => {
+    void (async () => {
+      const { meetingId } = await mockApi.getRecordingState();
+      settle(await mockApi.getMeeting(meetingId ?? "retro"));
+    })();
+  };
   return { promise, resolve, reject };
 }
 
@@ -574,7 +585,7 @@ describe("while recording", () => {
   });
 
   test("Stop does not wait long for a save that hangs", async () => {
-    saveNotesSpy().mockReturnValueOnce(new Promise<void>(() => {}));
+    saveNotesSpy().mockReturnValueOnce(new Promise<MeetingSummary>(() => {}));
     const stopMeeting = vi.spyOn(mockApi, "stopMeeting");
     await startMeeting();
 
@@ -605,5 +616,51 @@ describe("while recording", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Notes not saved yet");
     await advance(2000);
     expect(await savedNotes(meetingId)).toBe("Last words");
+  });
+});
+
+describe("the title from the notes", () => {
+  test("a # heading names a meeting that has its default title", async () => {
+    seedMeeting({
+      title: "Meeting, Nov 12 10:00 AM",
+      titleEdited: false,
+      notes: "",
+    });
+    await openMeeting();
+    expect(titleField().value).toBe("Meeting, Nov 12 10:00 AM");
+
+    typeInNotes("# Standup\n\n- one");
+    await advance(PAUSE);
+
+    expect(titleField().value).toBe("Standup");
+    expect((await mockApi.getMeeting("retro")).title).toBe("Standup");
+  });
+
+  test("a title typed in the field is kept when the heading changes", async () => {
+    seedMeeting({ notes: "" });
+    await openMeeting();
+    expect(titleField().value).toBe("Retro");
+
+    typeInNotes("# Agenda");
+    await advance(PAUSE);
+
+    expect(titleField().value).toBe("Retro");
+    expect((await mockApi.getMeeting("retro")).title).toBe("Retro");
+  });
+
+  test("a title from the notes does not overwrite the field while it is being edited", async () => {
+    seedMeeting({
+      title: "Meeting, Nov 12 10:00 AM",
+      titleEdited: false,
+      notes: "",
+    });
+    await openMeeting();
+
+    typeInNotes("# Standup");
+    titleField().focus();
+    fireEvent.change(titleField(), { target: { value: "My own" } });
+    await advance(PAUSE);
+
+    expect(titleField().value).toBe("My own");
   });
 });

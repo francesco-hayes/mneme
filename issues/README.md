@@ -39,6 +39,7 @@ Statuses: `todo`, `in progress`, `done`, `blocked`, `paused` (stopped part-way o
 | [031](031-028-leftovers.md) | Mic only in the recording bar, Starting… on Home, Dock to live meeting | 05, 06 | ui, app | 028 | done | open |
 | [032](032-choose-microphone.md) | Choose the microphone in Settings | 01, 05 | several | 031 | done | open |
 | [033](033-meeting-row-menu.md) | ⋯ menu on meeting rows: View, Delete to Trash | 05, 06 | ui, app | 031 | done | open |
+| [034](034-title-from-heading.md) | Meeting title follows the first `#` heading in the notes | 04, 05 | store, app, ui | 033 | done | open |
 
 ## Lanes
 

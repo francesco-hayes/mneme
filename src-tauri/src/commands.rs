@@ -67,7 +67,7 @@ pub async fn save_notes(
     state: State<'_, AppState>,
     id: String,
     notes: String,
-) -> CommandResult<()> {
+) -> CommandResult<dto::MeetingSummary> {
     run(state, move |core| core.save_notes(&id, &notes)).await
 }
 

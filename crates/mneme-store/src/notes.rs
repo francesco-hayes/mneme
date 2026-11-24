@@ -9,6 +9,11 @@
 //! Every save goes through the safe write helper, so a crash leaves the old
 //! `notes.md` or the new one, never a mix.
 //!
+//! # The title
+//!
+//! A save can also set the meeting's title from the notes: see
+//! [`heading_title`] and [`Store::save_notes`].
+//!
 //! # The timeline
 //!
 //! While a meeting is recording, each save also records which lines were
@@ -36,13 +41,28 @@ use serde::Serialize;
 
 use crate::append::{open_for_append, write_lines};
 use crate::error::{Error, Result};
-use crate::meeting::{MeetingId, MeetingStatus, TIMELINE_FILE};
+use crate::meeting::{
+    KEY_TITLE, KEY_TITLE_EDITED, MeetingId, MeetingStatus, MeetingSummary, TIMELINE_FILE,
+    format_bool,
+};
+use crate::naming::normalize_title;
 use crate::safe_write::PendingWrite;
 use crate::store::{self, Store};
 
-/// What [`Store::save_notes_at`] did besides saving the notes.
-#[derive(Debug, Default)]
+/// What a save did besides saving the notes.
+#[derive(Debug)]
 pub struct SavedNotes {
+    /// The meeting as it is after the save. Its title is the notes' first
+    /// heading when the save took the title from it, and its folder is the
+    /// renamed one when that rename was done.
+    pub meeting: MeetingSummary,
+    /// True when this save gave the meeting a new title from its notes.
+    pub title_changed: bool,
+    /// Set when the title changed but the folder could not be renamed to
+    /// match (a folder with that name exists, say). The notes and the title
+    /// are saved; the folder keeps its name until a later rename or the end
+    /// of the recording tries again.
+    pub rename_error: Option<Error>,
     /// How many entries this save appended to the note timeline. Zero when
     /// no line was new or changed, and when the meeting is not recording.
     pub timeline_entries: usize,
@@ -80,8 +100,24 @@ impl Store {
     /// While a meeting is recording use [`save_notes_at`](Self::save_notes_at)
     /// instead: lines saved through this method are never added to the
     /// timeline later, because later saves find them already on disk.
-    pub fn save_notes(&self, id: &MeetingId, body: &str) -> Result<()> {
-        self.save_notes_inner(id, body, None).map(|_| ())
+    ///
+    /// # The title follows the first heading
+    ///
+    /// The meeting takes its title from the notes' first `# ` heading (see
+    /// [`heading_title`]) while the title still follows the notes: while it
+    /// has never been edited, or while it is the same as the heading of the
+    /// body on disk before this save. So typing `# Standup` names the
+    /// meeting, and editing that heading renames it again; a title typed in
+    /// the title field that differs from the heading stops it. A save whose
+    /// notes have no heading leaves the title as it is.
+    ///
+    /// A title taken this way counts as edited (`title_edited: true`), and
+    /// the folder is renamed to match as [`rename_meeting`](Self::rename_meeting)
+    /// does, waiting for the end of the recording while the meeting records.
+    /// A rename that fails does not fail the save: see
+    /// [`SavedNotes::rename_error`].
+    pub fn save_notes(&self, id: &MeetingId, body: &str) -> Result<SavedNotes> {
+        self.save_notes_inner(id, body, None)
     }
 
     /// Saves the notes as [`save_notes`](Self::save_notes) does and, if the
@@ -137,7 +173,82 @@ impl Store {
         let _guard = self.lock();
         let folder = self.find_folder(id)?;
         let staged = stage_save(&folder, body, meeting_time_ms)?;
-        staged.commit()
+        let mut saved = staged.commit()?;
+        // A folder is never renamed while files in it are being appended
+        // to; the end of the recording applies it.
+        if saved.title_changed && saved.meeting.status != MeetingStatus::Recording {
+            saved.rename_error = self.apply_pending_rename(&mut saved.meeting).err();
+        }
+        Ok(saved)
+    }
+}
+
+/// The title the notes ask for: the text of the first level-one ATX heading
+/// (`# Title`), tidied to one line as titles are. `None` when there is none.
+///
+/// The heading rules are CommonMark's, as far as a title needs them: up to
+/// three spaces before the `#`, then a space or tab (so `#tag` and `##` are
+/// not one), and an optional closing run of `#` after a space. Lines inside
+/// fenced code blocks (``` or ~~~) are skipped, so a `# comment` in a shell
+/// snippet is not a title. A heading with no text is skipped too, and the
+/// next one counts. Setext headings (`Title` over `===`) are not read.
+pub fn heading_title(body: &str) -> Option<String> {
+    let mut fence: Option<(char, usize)> = None;
+    for line in body.lines() {
+        let rest = line.trim_start_matches(' ');
+        let indent = line.len() - rest.len();
+        if indent > 3 {
+            continue;
+        }
+        if let Some((mark, len)) = fence_marker(rest) {
+            match fence {
+                None => fence = Some((mark, len)),
+                Some((open, open_len))
+                    if open == mark
+                        && len >= open_len
+                        && rest.trim_start_matches(mark).trim().is_empty() =>
+                {
+                    fence = None;
+                }
+                Some(_) => {}
+            }
+            continue;
+        }
+        if fence.is_some() {
+            continue;
+        }
+        let Some(after) = rest.strip_prefix('#') else {
+            continue;
+        };
+        if !(after.is_empty() || after.starts_with([' ', '\t'])) {
+            continue;
+        }
+        let title = normalize_title(without_closing_hashes(after.trim()));
+        if !title.is_empty() {
+            return Some(title);
+        }
+    }
+    None
+}
+
+/// The fence character and how many of it start the line, for a line that
+/// opens or closes a fenced code block: three or more backticks or tildes.
+fn fence_marker(line: &str) -> Option<(char, usize)> {
+    let mark = line.chars().next().filter(|c| matches!(c, '`' | '~'))?;
+    let len = line.chars().take_while(|&c| c == mark).count();
+    (len >= 3).then_some((mark, len))
+}
+
+/// A heading's text without its optional closing sequence: `Title ##`
+/// becomes `Title`, while `C#` stays `C#`.
+fn without_closing_hashes(text: &str) -> &str {
+    let stripped = text.trim_end_matches('#');
+    if stripped.is_empty() {
+        ""
+    } else if stripped.ends_with([' ', '\t']) {
+        stripped.trim_end()
+    } else {
+        text
     }
 }
 
@@ -176,6 +287,22 @@ impl StagedSave {
 fn stage_save(folder: &Path, body: &str, meeting_time_ms: Option<u64>) -> Result<StagedSave> {
     let mut open = store::load(folder)?;
 
+    // The title follows the notes while it is untouched or still the old
+    // heading. See `Store::save_notes`.
+    let follows = !open.summary.title_edited
+        || heading_title(&open.doc.body).as_deref() == Some(open.summary.title.as_str());
+    let mut title_changed = false;
+    if follows
+        && let Some(title) = heading_title(body)
+        && title != open.summary.title
+    {
+        open.doc.set_string(KEY_TITLE, &title);
+        open.doc.set(KEY_TITLE_EDITED, format_bool(true));
+        open.summary.title = title;
+        open.summary.title_edited = true;
+        title_changed = true;
+    }
+
     let typed = match meeting_time_ms {
         Some(_) if open.summary.status == MeetingStatus::Recording => {
             typed_lines(&open.doc.body, body)
@@ -186,7 +313,13 @@ fn stage_save(folder: &Path, body: &str, meeting_time_ms: Option<u64>) -> Result
     open.doc.body = body.to_owned();
     let pending = open.stage()?;
 
-    let mut saved = SavedNotes::default();
+    let mut saved = SavedNotes {
+        meeting: open.summary,
+        title_changed,
+        rename_error: None,
+        timeline_entries: 0,
+        timeline_error: None,
+    };
     if let (Some(time_ms), false) = (meeting_time_ms, typed.is_empty()) {
         match append_entries(&folder.join(TIMELINE_FILE), time_ms, &typed) {
             Ok(()) => saved.timeline_entries = typed.len(),

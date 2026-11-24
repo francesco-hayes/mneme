@@ -367,19 +367,31 @@ impl AppCore {
     /// running) the save carries the meeting time, on the clock of the
     /// transcript's timestamps, so the note timeline is written. At any
     /// other time, and for any other meeting, it is a plain save.
-    pub fn save_notes(&self, id: &str, notes: &str) -> Result<()> {
+    ///
+    /// Returns the meeting as it is after the save: a save can give it its
+    /// title from the notes' first heading (see `Store::save_notes`).
+    pub fn save_notes(&self, id: &str, notes: &str) -> Result<dto::MeetingSummary> {
         let id = MeetingId::from(id);
-        match self.live(&id) {
+        let live = self.live(&id);
+        let saved = match &live {
             Some(live) => {
                 let at_ms = u64::try_from(live.session.elapsed().as_millis()).unwrap_or(u64::MAX);
-                let saved = live.store.save_notes_at(&id, notes, at_ms).map_err(msg)?;
-                if let Some(error) = saved.timeline_error {
-                    log(format_args!("note timeline of {id}: {error}"));
-                }
-                Ok(())
+                live.store.save_notes_at(&id, notes, at_ms).map_err(msg)?
             }
-            None => self.store().save_notes(&id, notes).map_err(msg),
+            None => self.store().save_notes(&id, notes).map_err(msg)?,
+        };
+        if let Some(error) = &saved.timeline_error {
+            log(format_args!("note timeline of {id}: {error}"));
         }
+        if let Some(error) = &saved.rename_error {
+            log(format_args!(
+                "folder of {id} after a title from its notes: {error}"
+            ));
+        }
+        Ok(dto::MeetingSummary::from_store(
+            &saved.meeting,
+            live.is_some(),
+        ))
     }
 
     pub fn rename_meeting(&self, id: &str, title: &str) -> Result<dto::MeetingSummary> {

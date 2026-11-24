@@ -11,6 +11,30 @@ import { Autosave } from "../../lib/autosave";
 
 const savers = new Map<string, Autosave>();
 
+type TitleListener = (title: string) => void;
+const titleListeners = new Map<string, Set<TitleListener>>();
+
+/**
+ * Calls `listener` with the meeting's title after each save of its notes. A
+ * save can rename the meeting: it takes its title from the first `# `
+ * heading. Returns the unsubscribe function.
+ */
+export function onTitleSaved(
+  meetingId: string,
+  listener: TitleListener,
+): () => void {
+  let listeners = titleListeners.get(meetingId);
+  if (listeners === undefined) {
+    listeners = new Set();
+    titleListeners.set(meetingId, listeners);
+  }
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+    if (listeners.size === 0) titleListeners.delete(meetingId);
+  };
+}
+
 /**
  * The autosave for a meeting's notes. `loadedNotes` is what `api.getMeeting`
  * just returned; it is used unless an earlier autosave for the meeting still
@@ -30,7 +54,12 @@ export function notesAutosave(
   }
   const saver = new Autosave({
     initial: loadedNotes,
-    save: (text) => api.saveNotes(meetingId, text),
+    save: async (text) => {
+      const meeting = await api.saveNotes(meetingId, text);
+      for (const listener of titleListeners.get(meetingId) ?? []) {
+        listener(meeting.title);
+      }
+    },
   });
   savers.set(meetingId, saver);
   return saver;

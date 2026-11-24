@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
   createMockApi,
+  headingTitle,
   MOCK_MIC_ONLY_WARNING,
   MOCK_MICROPHONES,
   mockOptionsFromSearch,
@@ -851,5 +852,42 @@ describe("microphones", () => {
 
     const saved = await api.updateSettings({ microphoneId: "usb" });
     expect(saved.microphoneId).toBe("usb");
+  });
+});
+
+describe("the title from the notes", () => {
+  test("headingTitle reads the first level-one heading outside code", () => {
+    const cases: [string, string | null][] = [
+      ["# Standup", "Standup"],
+      ["notes first\n\n# Later\n# Second", "Later"],
+      ["   # Three spaces", "Three spaces"],
+      ["    # Four is code", null],
+      ["## Level two", null],
+      ["#hashtag", null],
+      ["#\n# Real one", "Real one"],
+      ["# Closed ##", "Closed"],
+      ["# C#", "C#"],
+      ["# Spaced   out  ", "Spaced out"],
+      ["```sh\n# comment\n```\n# After", "After"],
+      ["~~~\n# inside\n~~~~\n", null],
+      ["", null],
+    ];
+    for (const [body, expected] of cases) {
+      expect(headingTitle(body), body).toBe(expected);
+    }
+  });
+
+  test("saveNotes names an untitled meeting from its heading, and returns it", async () => {
+    const api = create({ stopDelayMs: 0 });
+    const live = await api.startMeeting();
+
+    const saved = await api.saveNotes(live.id, "# Weekly sync\n- one");
+    expect(saved.title).toBe("Weekly sync");
+    expect((await api.getMeeting(live.id)).title).toBe("Weekly sync");
+
+    // A title typed by hand stops it.
+    await api.renameMeeting(live.id, "Board prep");
+    const after = await api.saveNotes(live.id, "# Weekly sync, moved\n");
+    expect(after.title).toBe("Board prep");
   });
 });

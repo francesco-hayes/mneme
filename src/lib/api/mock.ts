@@ -222,6 +222,43 @@ const IDLE: RecordingState = {
 export const MOCK_MIC_ONLY_WARNING =
   "System audio access is denied, so this meeting records the microphone only. Allow Mneme in System Settings > Privacy & Security > Screen & System Audio Recording, under System Audio Recording Only, then quit and reopen Mneme.";
 
+/**
+ * The title a notes body asks for: its first level-one `# ` heading, outside
+ * fenced code, tidied to one line. The mock's copy of `heading_title` in
+ * `crates/mneme-store/src/notes.rs`.
+ */
+export function headingTitle(body: string): string | null {
+  let fence: { mark: string; length: number } | null = null;
+  for (const line of body.split(/\r?\n/)) {
+    const rest = line.replace(/^ +/, "");
+    if (line.length - rest.length > 3) continue;
+    const fenceMatch = /^(`{3,}|~{3,})/.exec(rest);
+    if (fenceMatch !== null) {
+      const run = fenceMatch[1];
+      if (fence === null) {
+        fence = { mark: run[0], length: run.length };
+      } else if (
+        run[0] === fence.mark &&
+        run.length >= fence.length &&
+        rest.slice(run.length).trim() === ""
+      ) {
+        fence = null;
+      }
+      continue;
+    }
+    if (fence !== null) continue;
+    const heading = /^#(?:[ \t]+(.*))?$/.exec(rest);
+    if (heading === null) continue;
+    let text = (heading[1] ?? "").trim();
+    const stripped = text.replace(/#+$/, "");
+    if (stripped === "") text = "";
+    else if (/[ \t]$/.test(stripped)) text = stripped.trimEnd();
+    const title = text.replace(/\s+/g, " ").trim();
+    if (title !== "") return title;
+  }
+  return null;
+}
+
 const sleep = (ms: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -568,7 +605,24 @@ export function createMockApi(initialOptions: MockOptions = {}): MockApi {
 
     saveNotes: (id, notes) =>
       call("saveNotes", () => {
-        record(id).notes = notes;
+        const meeting = record(id);
+        // The title follows the first heading, as the backend's does.
+        const follows =
+          !meeting.titleEdited || headingTitle(meeting.notes) === meeting.title;
+        const heading = headingTitle(notes);
+        meeting.notes = notes;
+        if (follows && heading !== null && heading !== meeting.title) {
+          meeting.title = heading;
+          meeting.titleEdited = true;
+          if (meeting.status !== "recording") {
+            meeting.folderName = meetingFolderName(
+              meeting.startedAt,
+              heading,
+              true,
+            );
+          }
+        }
+        return toSummary(meeting);
       }),
 
     renameMeeting: (id, title) =>

@@ -69,7 +69,7 @@ pub use meeting::{
     Meeting, MeetingId, MeetingStatus, MeetingSummary, NOTES_FILE, TIMELINE_FILE, TRANSCRIPT_FILE,
 };
 pub use naming::{DEFAULT_FOLDER_TITLE, sanitize_title};
-pub use notes::SavedNotes;
+pub use notes::{SavedNotes, heading_title};
 pub use recovery::{RecoveredMeeting, RecoveryFailure, RecoveryReport};
 pub use safe_write::{is_temp_file_name, safe_write};
 pub use settings::{

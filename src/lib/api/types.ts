@@ -23,7 +23,7 @@ export interface Api {
   getTranscript(id: string): Promise<TranscriptLine[]>;
   startMeeting(): Promise<Meeting>;
   stopMeeting(): Promise<Meeting>;
-  saveNotes(id: string, notes: string): Promise<void>;
+  saveNotes(id: string, notes: string): Promise<MeetingSummary>;
   renameMeeting(id: string, title: string): Promise<MeetingSummary>;
   showInFinder(id: string): Promise<void>;
   deleteMeeting(id: string): Promise<void>;

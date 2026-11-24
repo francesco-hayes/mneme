@@ -1,6 +1,7 @@
-import { type KeyboardEvent, useRef } from "react";
+import { type KeyboardEvent, useEffect, useRef } from "react";
 import { api } from "../../lib/api";
 import { errorMessage } from "../../lib/errors";
+import { onTitleSaved } from "./notesAutosave";
 import styles from "./TitleField.module.css";
 
 export interface TitleFieldProps {
@@ -18,7 +19,9 @@ export interface TitleFieldProps {
  * saved with `api.renameMeeting` on Enter and when the field loses focus.
  * Escape, an empty title and a failed rename all put the previous title back.
  * It never asks for a title: a meeting keeps its date-time title until the
- * user changes it.
+ * user changes it, here or with a `# ` heading in the notes. A title that a
+ * notes save brings is shown at once, unless the field is being edited or a
+ * rename from it is on its way: then the user's title wins.
  */
 export function TitleField({
   meetingId,
@@ -33,6 +36,20 @@ export function TitleField({
   const asked = useRef(initialTitle);
   /** Renames run one at a time, in the order they were made. */
   const queue = useRef(Promise.resolve());
+
+  useEffect(
+    () =>
+      onTitleSaved(meetingId, (title) => {
+        const input = inputRef.current;
+        if (input === null || title === saved.current) return;
+        if (document.activeElement === input) return;
+        if (asked.current !== saved.current) return;
+        saved.current = title;
+        asked.current = title;
+        input.value = title;
+      }),
+    [meetingId],
+  );
 
   function commit() {
     const input = inputRef.current;

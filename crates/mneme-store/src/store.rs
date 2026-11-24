@@ -270,7 +270,7 @@ impl Store {
 
     /// Renames the folder to what the frontmatter says it should be, if the
     /// title was edited and the name differs. Updates `summary.folder`.
-    fn apply_pending_rename(&self, summary: &mut MeetingSummary) -> Result<()> {
+    pub(crate) fn apply_pending_rename(&self, summary: &mut MeetingSummary) -> Result<()> {
         let Some(target) = rename_target(summary) else {
             return Ok(());
         };

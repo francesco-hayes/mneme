@@ -72,7 +72,7 @@ export const tauriApi: Api = {
   getTranscript: (id) => call<TranscriptLine[]>("get_transcript", { id }),
   startMeeting: () => call<Meeting>("start_meeting"),
   stopMeeting: () => call<Meeting>("stop_meeting"),
-  saveNotes: (id, notes) => call<void>("save_notes", { id, notes }),
+  saveNotes: (id, notes) => call<MeetingSummary>("save_notes", { id, notes }),
   renameMeeting: (id, title) =>
     call<MeetingSummary>("rename_meeting", { id, title }),
   showInFinder: (id) => call<void>("show_in_finder", { id }),
