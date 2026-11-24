@@ -8,6 +8,11 @@
 # commit, and creates a draft release with the files attached. You then write
 # the notes and publish the draft. `pnpm bump 0.2.0` sets the version.
 #
+# A version with a pre-release part (0.2.0-beta.1, 0.2.0-rc.1) makes a draft
+# marked as a pre-release: once published it is on the Releases page for
+# testers, but GitHub does not show it as the latest release. Bump to the plain
+# version (0.2.0) for the real release.
+#
 # It can also be run by hand (Actions, Release, Run workflow) for an existing
 # tag, to rebuild its files. They replace the files on that tag's release, or
 # a draft is made if it has none.
@@ -48,6 +53,7 @@ jobs:
     outputs:
       build: ${{ steps.decide.outputs.build }}
       tag: ${{ steps.decide.outputs.tag }}
+      prerelease: ${{ steps.decide.outputs.prerelease }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -64,6 +70,12 @@ jobs:
             echo "::error::The version in Cargo.toml ($cargo_version) and package.json ($node_version) differ. Set both with: pnpm bump <version>"
             exit 1
           fi
+
+          # A version with a pre-release part (0.2.0-beta.1) is a pre-release.
+          case "$cargo_version" in
+            *-*) echo "prerelease=true" >> "$GITHUB_OUTPUT" ;;
+            *) echo "prerelease=false" >> "$GITHUB_OUTPUT" ;;
+          esac
 
           if [ -n "$INPUT_TAG" ]; then
             echo "Run by hand for $INPUT_TAG."
@@ -95,6 +107,7 @@ jobs:
       cancel-in-progress: false
     env:
       TAG: ${{ needs.check.outputs.tag }}
+      PRERELEASE: ${{ needs.check.outputs.prerelease }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -172,7 +185,13 @@ jobs:
             echo "Creating tag $TAG at $sha."
             gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$TAG" -f sha="$sha" > /dev/null
           fi
-          echo "Creating draft release $TAG."
+          kind=()
+          if [ "$PRERELEASE" = "true" ]; then
+            echo "Creating draft pre-release $TAG."
+            kind=(--prerelease)
+          else
+            echo "Creating draft release $TAG."
+          fi
           gh release create "$TAG" dist-release/* --repo "$GITHUB_REPOSITORY" \
-            --draft --verify-tag --title "Mneme $VERSION" \
+            --draft --verify-tag ${kind[@]+"${kind[@]}"} --title "Mneme $VERSION" \
             --notes "Draft built from $TAG. Replace this with the release notes, check the files below, then publish."

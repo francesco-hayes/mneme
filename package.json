@@ -1,7 +1,7 @@
 {
   "name": "mneme",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0-beta.1",
   "description": "Local-only meeting notes for macOS.",
   "license": "MIT",
   "type": "module",

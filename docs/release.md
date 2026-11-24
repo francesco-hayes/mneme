@@ -89,6 +89,12 @@ A new version on `main` builds the Mac app and puts it in a draft release on Git
 
 5. On the Releases page, edit the draft: replace the placeholder text with the release notes, check the files are there, and publish.
 
+### Beta versions
+
+A version with a pre-release part, such as `pnpm bump 0.2.0-beta.1` (or `-rc.1`), goes through the same steps, but its draft is marked as a **pre-release**. Once published it is listed on the Releases page for testers, and GitHub does not show it as the latest release, so the 0.1.0 download stays the one people find. Fix what the testers find, bump to `0.2.0-beta.2` for another round, and bump to plain `0.2.0` for the real release.
+
+The app reports the full version, `0.2.0-beta.1`, in Finder and About. macOS takes it as given for an app downloaded outside the App Store.
+
 If `Cargo.toml` and `package.json` have different versions, the check fails with an error saying so and nothing is built. `pnpm bump` keeps them the same.
 
 To build a version again, for example after deleting its draft: delete its tag too (`git push origin :v0.2.0`), then push to `main` again. Or rebuild the files of an existing tag by hand: Actions, Release, Run workflow, and give it the tag. That replaces the files on its release, or makes a draft if it has none.
