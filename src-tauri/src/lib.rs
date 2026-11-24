@@ -81,8 +81,11 @@ pub fn run() {
     let app = tauri::Builder::default()
         .setup(|app| {
             let state = launch(app.handle());
-            if let Err(error) = &state.core {
-                eprintln!("mneme: {error}");
+            match &state.core {
+                // Loads the model in the background, so New meeting is fast.
+                // `shutdown` at exit frees it.
+                Ok(core) => core.warm_up(),
+                Err(error) => eprintln!("mneme: {error}"),
             }
             app.manage(state);
             // Without the menu bar icon the window still does everything.
@@ -134,9 +137,10 @@ pub fn run() {
         RunEvent::ExitRequested {
             code: None, api, ..
         } => api.prevent_exit(),
-        // Every way out, Quit Mneme and Cmd+Q included: stop the session and
-        // free the Whisper engine before the process ends (an engine alive
-        // at exit aborts it). `shutdown` is final, so it runs only here.
+        // Every way out, Quit Mneme and Cmd+Q included: stop the session,
+        // wait for a model load under way and free the warm Whisper engine
+        // before the process ends (an engine alive at exit aborts it).
+        // `shutdown` is final, so it runs only here.
         RunEvent::Exit => {
             if let Some(state) = handle.try_state::<AppState>()
                 && let Ok(core) = &state.core

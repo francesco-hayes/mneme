@@ -328,6 +328,24 @@ impl Fixture {
         }
     }
 
+    /// The model of the warm engine, if one is kept.
+    fn warm_id(&self) -> Option<String> {
+        self.core.warm().engine.as_ref().map(|(id, _)| id.clone())
+    }
+
+    fn wait_for_warm(&self, id: &str) {
+        self.wait_for("the warm model", || self.warm_id().as_deref() == Some(id));
+    }
+
+    /// The file names of every model load so far.
+    fn loaded(&self) -> Vec<String> {
+        let loaded = self.host.loaded.lock().unwrap();
+        let names = loaded.iter().map(|path| path.file_name().unwrap());
+        names
+            .map(|name| name.to_str().unwrap().to_owned())
+            .collect()
+    }
+
     fn wait_for_lines(&self, id: &str, lines: usize) {
         self.wait_for("transcript lines", || {
             self.core.get_meeting(id).unwrap().transcript_line_count >= lines
@@ -394,10 +412,11 @@ fn start_then_stop_gives_a_complete_meeting_with_transcript_duration_and_note_ti
     );
     assert_eq!(f.core.recording_state(), dto::RecordingState::idle());
 
-    // English only, and the engine is gone once the meeting has stopped.
+    // English only, and the engine is kept for the next meeting (030).
     let languages = f.host.languages.lock().unwrap().clone();
     assert_eq!(languages, [Language::english(), Language::english()]);
-    assert!(!f.host.engine_is_alive());
+    assert!(f.host.engine_is_alive());
+    assert_eq!(f.warm_id().as_deref(), Some("small"));
 
     // A late save after stop is a plain save: saved, no timeline entry.
     f.core
@@ -632,7 +651,8 @@ fn a_session_whose_sources_end_is_finished_without_a_stop() {
         *f.host.on_disk_at_idle.lock().unwrap(),
         [vec![MeetingStatus::Complete]]
     );
-    assert!(!f.host.engine_is_alive());
+    // Kept warm for the next meeting.
+    assert_eq!(f.warm_id().as_deref(), Some("small"));
     assert_eq!(f.core.stop_meeting().unwrap_err(), NOT_RECORDING);
 }
 
@@ -918,4 +938,130 @@ fn stop_gives_up_on_a_transcriber_call_that_never_returns_and_closes_the_meeting
     // A new meeting starts as usual.
     f.core.start_meeting().unwrap();
     f.core.stop_meeting().unwrap();
+}
+
+// ---- Warm model (030) ----
+
+#[test]
+fn the_model_warmed_at_launch_serves_every_meeting_without_a_reload() {
+    let f = Fixture::new(&["small"], NEVER, |_| {});
+    f.core.warm_up();
+    f.wait_for_warm("small");
+
+    for _ in 0..2 {
+        f.core.start_meeting().unwrap();
+        assert_eq!(f.core.recording_state().model_id.as_deref(), Some("small"));
+        f.core.stop_meeting().unwrap();
+        assert!(f.host.engine_is_alive());
+    }
+    assert_eq!(f.loaded(), ["ggml-small.bin"]);
+}
+
+#[test]
+fn a_new_default_model_replaces_the_warm_one() {
+    // No default: `small` is first in the catalog, so it is the pick.
+    let f = Fixture::new(&["small", "large"], NEVER, |_| {});
+    f.core.warm_up();
+    f.wait_for_warm("small");
+    let small = f.host.engine.lock().unwrap().clone();
+
+    let patch = SettingsPatch {
+        default_model_id: Patch::Set("large".to_owned()),
+        ..SettingsPatch::default()
+    };
+    f.core.update_settings(&patch).unwrap();
+    f.wait_for_warm("large");
+    // One engine at a time: the old one is gone.
+    assert!(small.upgrade().is_none());
+
+    f.core.start_meeting().unwrap();
+    assert_eq!(f.core.recording_state().model_id.as_deref(), Some("large"));
+    f.core.stop_meeting().unwrap();
+    assert_eq!(f.loaded(), ["ggml-small.bin", "ggml-large.bin"]);
+}
+
+#[test]
+fn deleting_the_warm_model_frees_it_and_warms_the_next_pick() {
+    let f = Fixture::new(&["small", "large"], NEVER, |_| {});
+    let patch = SettingsPatch {
+        default_model_id: Patch::Set("large".to_owned()),
+        ..SettingsPatch::default()
+    };
+    f.core.update_settings(&patch).unwrap();
+    f.wait_for_warm("large");
+    let large = f.host.engine.lock().unwrap().clone();
+
+    f.core.delete_model("large").unwrap();
+    assert!(large.upgrade().is_none(), "freed before delete returns");
+    assert!(!f.core.list_models()[1].installed);
+    assert_eq!(f.core.get_settings().default_model_id, None);
+    f.wait_for_warm("small");
+    assert_eq!(f.loaded(), ["ggml-large.bin", "ggml-small.bin"]);
+
+    // The last model too: nothing is left to warm.
+    f.core.delete_model("small").unwrap();
+    assert_eq!(f.warm_id(), None);
+    assert!(!f.host.engine_is_alive());
+}
+
+#[test]
+fn a_start_during_the_warm_up_waits_for_it_and_the_model_loads_once() {
+    let (open_gate, gate): (Sender<()>, Receiver<()>) = channel();
+    let f = Fixture::new(&["small"], NEVER, |host| {
+        host.load_gate = Mutex::new(Some(gate));
+    });
+    f.core.warm_up();
+    f.wait_for("the warm-up to begin loading", || f.loaded().len() == 1);
+
+    let core = Arc::clone(&f.core);
+    let start = thread::spawn(move || core.start_meeting());
+    f.wait_for("the start to begin", || f.core.is_starting());
+    // The start waits without holding the recording lock.
+    assert_eq!(f.core.recording_state(), dto::RecordingState::idle());
+    assert_eq!(f.core.start_meeting().unwrap_err(), ALREADY_RECORDING);
+
+    open_gate.send(()).unwrap();
+    let meeting = start.join().unwrap().unwrap();
+    assert_eq!(meeting.summary.status, "recording");
+    assert_eq!(f.loaded(), ["ggml-small.bin"]);
+    f.core.stop_meeting().unwrap();
+}
+
+#[test]
+fn shutdown_frees_the_warm_engine() {
+    let f = Fixture::new(&["small"], NEVER, |_| {});
+    f.core.warm_up();
+    f.wait_for_warm("small");
+    assert!(f.host.engine_is_alive());
+
+    f.core.shutdown();
+    assert!(!f.host.engine_is_alive());
+    assert_eq!(f.warm_id(), None);
+    // Nothing warms up once the app is quitting.
+    f.core.warm_up();
+    thread::sleep(Duration::from_millis(100));
+    assert_eq!(f.loaded(), ["ggml-small.bin"]);
+}
+
+#[test]
+fn shutdown_during_a_warm_up_waits_for_it_and_drops_what_it_loaded() {
+    let (open_gate, gate): (Sender<()>, Receiver<()>) = channel();
+    let f = Fixture::new(&["small"], NEVER, |host| {
+        host.load_gate = Mutex::new(Some(gate));
+    });
+    f.core.warm_up();
+    f.wait_for("the warm-up to begin loading", || f.loaded().len() == 1);
+
+    let core = Arc::clone(&f.core);
+    let shutdown = thread::spawn(move || core.shutdown());
+    f.wait_for("shutdown to begin", || {
+        f.core.quitting.load(Ordering::SeqCst)
+    });
+    thread::sleep(Duration::from_millis(50));
+    assert!(!shutdown.is_finished(), "shutdown waits for the load");
+
+    open_gate.send(()).unwrap();
+    shutdown.join().unwrap();
+    assert!(!f.host.engine_is_alive());
+    assert_eq!(f.warm_id(), None);
 }

@@ -61,6 +61,7 @@ const CALL_LIMIT: Duration = Duration::from_millis(300);
 const NOT_RECORDING: &str = "No meeting is being recorded.";
 const ALREADY_RECORDING: &str = "A meeting is already being recorded.";
 const NO_MODEL: &str = "No transcription model is installed. Download one in Settings.";
+const QUITTING: &str = "Mneme is quitting.";
 
 fn msg(error: impl Display) -> String {
     error.to_string()
@@ -154,8 +155,8 @@ enum Recording {
     },
     Active {
         live: Live,
-        /// The loaded model. It lives only as long as the recording: an
-        /// engine still alive when the process exits aborts it (issue 005).
+        /// The loaded model. [`Warm`] holds it too, so it outlives the
+        /// recording; `shutdown` frees both (issue 005).
         engine: Arc<dyn Transcriber>,
     },
     /// `stop` is running: the transcriber is catching up.
@@ -194,6 +195,26 @@ impl Recording {
     }
 }
 
+/// The model kept loaded between meetings, so New meeting does not wait for
+/// a load (seconds, plus about 7 s on the first load while Metal compiles
+/// its shaders). One engine at most. It holds 0.1 to 1.6 GB of memory,
+/// depending on the model, for as long as the app runs; that is accepted
+/// for the faster start.
+///
+/// An engine still alive when the process exits aborts it (issue 005), so
+/// only this cache and a recording ever hold one, and `shutdown` frees both.
+#[derive(Default)]
+struct Warm {
+    /// The loaded engine and the id of its model.
+    engine: Option<(String, Arc<dyn Transcriber>)>,
+    /// The model a load under way is loading. One load runs at a time;
+    /// anyone else who needs an engine waits for it.
+    loading: Option<String>,
+    /// The model of the load under way was deleted meanwhile: its engine
+    /// is not kept.
+    discard: bool,
+}
+
 /// The app's state: the three stores and the current recording.
 pub struct AppCore {
     host: Arc<dyn Host>,
@@ -209,6 +230,10 @@ pub struct AppCore {
     /// What this run's recordings learned about the system audio
     /// permission, the only way to know it without private API.
     system_audio_seen: Mutex<SystemAudioSeen>,
+    /// Never locked before `recording`: the order is `recording`, `warm`.
+    warm: Mutex<Warm>,
+    /// Signalled whenever a load ends.
+    warm_changed: Condvar,
     tick: Duration,
 }
 
@@ -254,6 +279,8 @@ impl AppCore {
             changed: Condvar::new(),
             quitting: AtomicBool::new(false),
             system_audio_seen: Mutex::default(),
+            warm: Mutex::default(),
+            warm_changed: Condvar::new(),
             tick,
         }))
     }
@@ -269,6 +296,10 @@ impl AppCore {
         self.recording
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn warm(&self) -> MutexGuard<'_, Warm> {
+        self.warm.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     fn set_recording(&self, next: Recording) {
@@ -379,7 +410,7 @@ impl AppCore {
         let (model_id, model_path) = {
             let mut recording = self.recording();
             if self.quitting.load(Ordering::SeqCst) {
-                return Err("Mneme is quitting.".to_owned());
+                return Err(QUITTING.to_owned());
             }
             if !matches!(*recording, Recording::Idle) {
                 return Err(ALREADY_RECORDING.to_owned());
@@ -450,8 +481,10 @@ impl AppCore {
         };
 
         // The model first: if it cannot be loaded, no meeting folder is left
-        // behind.
-        let engine = self.host.load_transcriber(model_path)?;
+        // behind. Usually it is already warm.
+        let engine = self
+            .warm_engine(model_id, model_path, true)?
+            .expect("a reference was asked for");
 
         let store = self.store();
         let meeting = store
@@ -497,6 +530,105 @@ impl AppCore {
                 Err(format!("The recording could not start: {error}"))
             }
         }
+    }
+
+    /// Loads the model a start would pick on a thread of its own and keeps
+    /// it, so the next New meeting does not wait for it. Run after launch
+    /// and whenever the pick may have changed. Waits for a recording to end
+    /// first, so a load does not compete with a meeting's transcription.
+    /// Does nothing when no model is installed.
+    pub fn warm_up(self: &Arc<Self>) {
+        let core = Arc::clone(self);
+        let spawned = thread::Builder::new()
+            .name("mneme-warm-up".to_owned())
+            .spawn(move || {
+                {
+                    let mut recording = core.recording();
+                    while !matches!(*recording, Recording::Idle) {
+                        recording = core
+                            .changed
+                            .wait(recording)
+                            .unwrap_or_else(PoisonError::into_inner);
+                    }
+                }
+                let Ok((id, path)) = core.pick_model() else {
+                    return;
+                };
+                if let Err(error) = core.warm_engine(&id, &path, false)
+                    && error != QUITTING
+                {
+                    log(format_args!("loading {id} ahead of a meeting: {error}"));
+                }
+            });
+        if let Err(error) = spawned {
+            log(format_args!("warm-up thread: {error}"));
+        }
+    }
+
+    /// The engine for this model: the warm one if it is this model, else
+    /// loaded now and kept in its place. Waits for a load under way rather
+    /// than loading alongside it. Never called with `recording` locked.
+    ///
+    /// `want`: return a reference. The warm-up does not ask for one, so its
+    /// thread never holds the engine once the load is over: `shutdown` may
+    /// return the moment the load ends.
+    fn warm_engine(
+        &self,
+        model_id: &str,
+        model_path: &Path,
+        want: bool,
+    ) -> Result<Option<Arc<dyn Transcriber>>> {
+        let mut warm = self.warm();
+        loop {
+            if self.quitting.load(Ordering::SeqCst) {
+                return Err(QUITTING.to_owned());
+            }
+            if let Some((id, engine)) = &warm.engine
+                && id == model_id
+            {
+                return Ok(want.then(|| Arc::clone(engine)));
+            }
+            if warm.loading.is_none() {
+                break;
+            }
+            warm = self
+                .warm_changed
+                .wait(warm)
+                .unwrap_or_else(PoisonError::into_inner);
+        }
+        // Checked under the lock `delete_model` holds while it deletes.
+        if !self.models.is_installed(model_id) {
+            return Err(format!("Model {model_id} is not installed."));
+        }
+        let previous = warm.engine.take();
+        warm.loading = Some(model_id.to_owned());
+        drop(warm);
+        // One engine at a time: the other model goes before this one loads.
+        drop(previous);
+
+        let loaded = self.host.load_transcriber(model_path);
+
+        let mut warm = self.warm();
+        let discard = std::mem::take(&mut warm.discard);
+        // Settled before the load is marked over, so an engine nobody keeps
+        // is already gone when `shutdown` sees the load end.
+        let result = match loaded {
+            Ok(engine) if self.quitting.load(Ordering::SeqCst) => {
+                drop(engine);
+                Err(QUITTING.to_owned())
+            }
+            Ok(engine) => {
+                if !discard {
+                    warm.engine = Some((model_id.to_owned(), Arc::clone(&engine)));
+                }
+                Ok(want.then_some(engine))
+            }
+            Err(error) => Err(error),
+        };
+        warm.loading = None;
+        drop(warm);
+        self.warm_changed.notify_all();
+        result
     }
 
     /// Runs on its own thread for one meeting: sends the state every tick,
@@ -651,16 +783,17 @@ impl AppCore {
         Ok(dto::Meeting::from_store(&meeting, false))
     }
 
-    /// Called when the app is about to exit: refuses new recordings, waits
-    /// for a start or stop that is under way, and stops a running recording.
-    /// When it returns no session and no engine is alive. Safe to call more
-    /// than once.
+    /// Called when the app is about to exit: refuses new recordings and
+    /// loads, waits for a start or stop that is under way, stops a running
+    /// recording, waits for a model load under way, and frees the warm
+    /// engine. When it returns no session and no engine is alive. Safe to
+    /// call more than once.
     pub fn shutdown(&self) {
         self.quitting.store(true, Ordering::SeqCst);
         loop {
             let recording = self.recording();
             match &*recording {
-                Recording::Idle => return,
+                Recording::Idle => break,
                 Recording::Active { .. } => {
                     drop(recording);
                     // An error here means another thread got to it first;
@@ -680,6 +813,17 @@ impl AppCore {
                 }
             }
         }
+        // A load that ends now drops its engine, since `quitting` is set.
+        let mut warm = self.warm();
+        while warm.loading.is_some() {
+            warm = self
+                .warm_changed
+                .wait(warm)
+                .unwrap_or_else(PoisonError::into_inner);
+        }
+        let engine = warm.engine.take();
+        drop(warm);
+        drop(engine);
     }
 
     // ---- Models ----
@@ -689,11 +833,22 @@ impl AppCore {
     }
 
     /// Starts a download and returns at once; progress and the outcome
-    /// arrive as download progress events.
-    pub fn download_model(&self, id: &str) -> Result<()> {
+    /// arrive as download progress events. An installed model may be the
+    /// one a start now picks, so the pick is warmed up.
+    pub fn download_model(self: &Arc<Self>, id: &str) -> Result<()> {
         let host = Arc::clone(&self.host);
+        // Weak: a download does not keep the core alive.
+        let core = Arc::downgrade(self);
         self.models
-            .start_download(id, move |progress| host.download_progress(&progress.into()))
+            .start_download(id, move |progress| {
+                let progress: dto::DownloadProgress = progress.into();
+                host.download_progress(&progress);
+                if progress.state == "done"
+                    && let Some(core) = core.upgrade()
+                {
+                    core.warm_up();
+                }
+            })
             .map(drop)
             .map_err(msg)
     }
@@ -703,10 +858,11 @@ impl AppCore {
     }
 
     /// Deletes a model file. Refused for the model the current recording
-    /// uses. Deleting the default model clears the default.
-    pub fn delete_model(&self, id: &str) -> Result<()> {
+    /// uses. A warm engine of it is freed first. Deleting the default model
+    /// clears the default. Then the pick is warmed up again.
+    pub fn delete_model(self: &Arc<Self>, id: &str) -> Result<()> {
         let name = self.models.spec(id).map_err(msg)?.name.clone();
-        {
+        let (deleted, freed) = {
             // Held across the delete so a start cannot pick the model in
             // between.
             let recording = self.recording();
@@ -715,16 +871,29 @@ impl AppCore {
                     "{name} is in use by the current recording and cannot be deleted."
                 ));
             }
-            self.models.delete(id).map_err(msg)?;
-        }
-        if self.settings.get().default_model_id.as_deref() == Some(id) {
+            // Also held across it, so no load of the model begins meanwhile.
+            let mut warm = self.warm();
+            let freed = warm.engine.take_if(|(warm_id, _)| warm_id == id).is_some();
+            if warm.loading.as_deref() == Some(id) {
+                warm.discard = true;
+            }
+            (self.models.delete(id).map_err(msg), freed)
+        };
+        let result = deleted.and_then(|()| {
+            if self.settings.get().default_model_id.as_deref() != Some(id) {
+                return Ok(());
+            }
             let patch = SettingsPatch {
                 default_model_id: Patch::Clear,
                 ..SettingsPatch::default()
             };
-            self.settings.update(&patch).map_err(msg)?;
+            self.settings.update(&patch).map(drop).map_err(msg)
+        });
+        // The pick may be another model now.
+        if freed || result.is_ok() {
+            self.warm_up();
         }
-        Ok(())
+        result
     }
 
     // ---- Settings ----
@@ -734,10 +903,22 @@ impl AppCore {
     }
 
     /// Applies a patch and returns the settings, which are on disk by then.
-    /// Refuses a default model that is not installed. A new meetings root
-    /// (not in the contract, but in the settings file) is refused during a
-    /// recording and otherwise opens, and recovers, a store on it.
-    pub fn update_settings(&self, patch: &SettingsPatch) -> Result<Settings> {
+    /// Refuses a default model that is not installed. A new default model is
+    /// warmed up in place of the old one. A new meetings root (not in the
+    /// contract, but in the settings file) is refused during a recording and
+    /// otherwise opens, and recovers, a store on it.
+    pub fn update_settings(self: &Arc<Self>, patch: &SettingsPatch) -> Result<Settings> {
+        let before = self.settings.get().default_model_id;
+        let result = self.apply_settings(patch);
+        if let Ok(after) = &result
+            && after.default_model_id != before
+        {
+            self.warm_up();
+        }
+        result
+    }
+
+    fn apply_settings(&self, patch: &SettingsPatch) -> Result<Settings> {
         if let Patch::Set(id) = &patch.default_model_id
             && !self.models.is_installed(id.trim())
         {
