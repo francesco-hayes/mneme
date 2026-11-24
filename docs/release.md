@@ -247,6 +247,7 @@ Issues with no manual checks: 001, 005, 006, 007, 010 to 020, 026.
 - [ ] Choose a USB or headset mic, start a meeting, speak: Me lines come from that mic.
 - [ ] Unplug the chosen mic during a meeting: recording carries on with the default. Plug it back in: it moves back.
 - [ ] Plug a mic in while Settings is open, then open the menu: it is there.
+- [ ] During a meeting, choose another microphone in Settings: within a second the Me lines come from the new one.
 
 ### Signing and release
 

@@ -19,11 +19,13 @@ In `src/lib/api/types.ts` and the PRD 05 block, which stay identical:
 - [x] `mneme-audio` lists input devices (id, name, which is the default) without opening anything or asking for permission, leaving out Mneme's own system audio device.
 - [x] `MicSource::with_device(id)` records that device while it is connected and the system default otherwise. It moves to the chosen device when it is plugged in, and back to the default when it is unplugged, through the existing twice-a-second device check.
 - [x] The settings file stores `microphoneId`; null or missing is the system default. Any text is accepted: a device that is not connected is not an error.
-- [x] Each meeting's sources are made with the microphone in the settings at its start.
+- [x] A change of microphone applies at once, also to a meeting that is recording: the recording moves to the new device at its next device check (within about half a second), keeping the meeting clock. Added after Francesco asked for it on 2026-11-24; at first a change applied from the next meeting.
 - [x] Settings has a Microphone section: a menu with "System default (name)" first, then each device by name. It saves on change. The list is read again when the menu is about to open, so a device plugged in meanwhile appears. A chosen device that is not connected stays chosen, shown as "Unplugged microphone", with a note that meetings record the system default until it is back. A list that cannot be read says so, with Retry.
 - [x] `cargo test --workspace`, clippy, fmt, `pnpm test`, `pnpm lint`, `pnpm build` and the local-only audit pass.
 
 ## Manual checks
+
+- [ ] During a meeting, choose another microphone in Settings: within a second the Me lines come from the new one, with no gap in the transcript beyond a moment.
 
 - [ ] In Settings, the menu lists the Mac's real microphones by name, with the current default named in the first entry.
 - [ ] Choose a USB or headset mic, start a meeting, speak: Me lines come from that mic (check `mic.wav` in the meeting folder if kept).
@@ -45,10 +47,11 @@ In `src/lib/api/types.ts` and the PRD 05 block, which stay identical:
 - UI: 400 tests pass. New Settings tests: names and order, saving an id and null, an unplugged choice with its note, a device plugged in while open appearing on the next open, and a failed list with Retry.
 - Browser, on the mock: the section between Transcription and Notes in dark mode, matching the model menu; the unplugged state with its note. No console errors.
 
+- Live switching (added the same day): the core holds one `MicChoice` (in `mneme-audio`), shared with every meeting's `MicSource`. `update_settings` sets it after a save that succeeded, and the source's backend reads it at each twice-a-second device check, so the existing reopen-on-change path moves the stream and keeps the clock. Tests: the real backend follows a new choice without being rebuilt (on this Mac's devices), and a core test that a change during a meeting reaches the recording's choice, back to the default too, and that a refused update leaves it alone.
+
 **Known gaps**
 
 - Not tried in the real app: whether recording actually switches to the chosen device has been checked only through the backend choosing it (`current_device` returns the chosen id); the manual checks are open.
-- A change during a meeting applies from the next meeting, not the current one.
 - An unplugged choice is shown as "Unplugged microphone", not by its name: only the id is stored.
 - Choosing which device to check is a Core Audio device listing twice a second while a chosen device is set (once for the default before). Not measured, expected to be negligible.
 - Virtual devices (for example "Microsoft Teams Audio") are listed like any other input.

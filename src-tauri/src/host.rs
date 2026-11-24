@@ -8,7 +8,7 @@ use std::process::Command;
 use std::sync::Arc;
 
 use mneme_audio::{
-    MicSource, PermissionStatus, SystemAudioSource, microphone_permission_status,
+    MicChoice, MicSource, PermissionStatus, SystemAudioSource, microphone_permission_status,
     request_microphone_permission, request_system_audio_permission, system_audio_permission_status,
 };
 use mneme_pipeline::{AudioSource, Transcriber};
@@ -79,9 +79,9 @@ impl Host for TauriHost {
         Ok(Arc::new(engine))
     }
 
-    fn sources(&self, microphone: Option<&str>) -> Vec<Box<dyn AudioSource>> {
+    fn sources(&self, microphone: &MicChoice) -> Vec<Box<dyn AudioSource>> {
         vec![
-            Box::new(MicSource::with_device(microphone.map(str::to_owned))),
+            Box::new(MicSource::with_choice(microphone.clone())),
             Box::new(SystemAudioSource::new()),
         ]
     }

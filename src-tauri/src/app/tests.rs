@@ -89,7 +89,7 @@ struct TestHost {
     trashed: Mutex<Vec<PathBuf>>,
     settings_opened: Mutex<Vec<PermissionKind>>,
     /// The microphone each meeting's sources were made for.
-    microphones_asked: Mutex<Vec<Option<String>>>,
+    microphones_asked: Mutex<Vec<MicChoice>>,
 }
 
 impl TestHost {
@@ -213,11 +213,11 @@ impl Host for TestHost {
         Ok(engine)
     }
 
-    fn sources(&self, microphone: Option<&str>) -> Vec<Box<dyn AudioSource>> {
+    fn sources(&self, microphone: &MicChoice) -> Vec<Box<dyn AudioSource>> {
         self.microphones_asked
             .lock()
             .unwrap()
-            .push(microphone.map(str::to_owned));
+            .push(microphone.clone());
         let source = |speaker, burst_at_ms| {
             let samples = tape(burst_at_ms, self.tape_ms);
             Box::new(FakeSource::from_samples(speaker, samples).with_pacing(self.pacing))
@@ -1179,8 +1179,59 @@ fn a_meeting_records_the_chosen_microphone_and_the_list_comes_from_the_host() {
     f.core.start_meeting().unwrap();
     f.core.stop_meeting().unwrap();
 
-    assert_eq!(
-        *f.host.microphones_asked.lock().unwrap(),
-        [None, Some("usb".to_owned())]
+    let asked: Vec<_> = f
+        .host
+        .microphones_asked
+        .lock()
+        .unwrap()
+        .iter()
+        .map(MicChoice::get)
+        .collect();
+    // Both meetings share the one choice, which now names the USB mic.
+    assert_eq!(asked, [Some("usb".to_owned()), Some("usb".to_owned())]);
+}
+
+#[test]
+fn changing_the_microphone_during_a_meeting_switches_the_recording() {
+    let f = Fixture::new(&["small"], NEVER, |_| {});
+    f.core.start_meeting().unwrap();
+    let live = f.host.microphones_asked.lock().unwrap()[0].clone();
+    assert_eq!(live.get(), None);
+
+    f.core
+        .update_settings(&SettingsPatch {
+            microphone_id: Patch::Set("usb".to_owned()),
+            ..SettingsPatch::default()
+        })
+        .unwrap();
+    // The recording's microphone source reads this at its next device check.
+    assert_eq!(live.get().as_deref(), Some("usb"));
+
+    // Back to the system default, still in the same meeting.
+    f.core
+        .update_settings(&SettingsPatch {
+            microphone_id: Patch::Clear,
+            ..SettingsPatch::default()
+        })
+        .unwrap();
+    assert_eq!(live.get(), None);
+    f.core.stop_meeting().unwrap();
+
+    // A refused update changes nothing.
+    f.core
+        .update_settings(&SettingsPatch {
+            microphone_id: Patch::Set("usb".to_owned()),
+            ..SettingsPatch::default()
+        })
+        .unwrap();
+    assert!(
+        f.core
+            .update_settings(&SettingsPatch {
+                microphone_id: Patch::Set("headset".to_owned()),
+                default_model_id: Patch::Set("large".to_owned()),
+                ..SettingsPatch::default()
+            })
+            .is_err()
     );
+    assert_eq!(live.get().as_deref(), Some("usb"));
 }

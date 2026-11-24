@@ -1,7 +1,9 @@
 //! The microphone source: an input device through `cpal`, labeled
 //! [`Speaker::Me`]. By default the system default input device; or one
-//! chosen by its id (see [`input_devices`] and [`MicSource::with_device`]),
-//! with the default standing in while the chosen one is not connected.
+//! chosen by its id (see [`input_devices`] and [`MicChoice`]), with the
+//! default standing in while the chosen one is not connected. The choice can
+//! change while a source records: it moves to the new device at its next
+//! device check, within about half a second.
 //!
 //! The stream is opened in the device's own format (whatever rate, channel
 //! count and sample format it currently runs at) and converted here. Asking
@@ -13,9 +15,10 @@
 //! The capture thread (see [`crate::capture`]) re-opens the stream on the
 //! device to use now (the chosen one if connected, else the default) when:
 //!
-//! - that device changes: the default changed, or the chosen device was
-//!   plugged in or out (checked twice a second; cpal's Core Audio backend
-//!   only follows default *output* changes by itself);
+//! - that device changes: the default changed, the chosen device was
+//!   plugged in or out, or another device was chosen (checked twice a
+//!   second; cpal's Core Audio backend only follows default *output*
+//!   changes by itself);
 //! - cpal reports a stream error, such as the device being unplugged or its
 //!   sample rate being changed in Audio MIDI Setup;
 //! - the stream delivers nothing for three seconds.
@@ -28,7 +31,7 @@
 //! one is inaudible to the transcriber, and a long one shows up as a gap in
 //! `start_ms`.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -86,6 +89,32 @@ pub fn input_devices() -> Vec<InputDevice> {
     list
 }
 
+/// The chosen input device, shared between whoever sets it (the app's
+/// settings) and every [`MicSource`] made with it. A change reaches a source
+/// that is recording at its next device check. Cloning shares the choice.
+#[derive(Debug, Clone, Default)]
+pub struct MicChoice(Arc<Mutex<Option<String>>>);
+
+impl MicChoice {
+    /// An [`InputDevice::id`], or `None` for the system default.
+    pub fn new(device: Option<String>) -> Self {
+        Self(Arc::new(Mutex::new(device)))
+    }
+
+    /// Chooses another device, or the default with `None`.
+    pub fn set(&self, device: Option<String>) {
+        *self.0.lock().unwrap_or_else(PoisonError::into_inner) = device;
+    }
+
+    /// The device chosen now.
+    pub fn get(&self) -> Option<String> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+}
+
 /// Which device to record: the chosen one if it is connected, otherwise
 /// the default.
 fn device_to_use(
@@ -109,8 +138,8 @@ fn device_to_use(
 pub struct MicSource {
     state: Arc<SourceState>,
     capture: Option<Capture>,
-    /// The id of the chosen input device, or `None` for the default.
-    device: Option<String>,
+    /// The chosen input device, read at every device check.
+    choice: MicChoice,
 }
 
 impl MicSource {
@@ -125,8 +154,14 @@ impl MicSource {
     /// not connected the default is recorded instead, and the source moves
     /// to the chosen one when it is plugged in.
     pub fn with_device(device: Option<String>) -> Self {
+        Self::with_choice(MicChoice::new(device))
+    }
+
+    /// Creates a source that records whatever `choice` names, and follows
+    /// it when it changes during the recording.
+    pub fn with_choice(choice: MicChoice) -> Self {
         Self {
-            device,
+            choice,
             ..Self::default()
         }
     }
@@ -164,12 +199,12 @@ impl AudioSource for MicSource {
             PermissionStatus::Granted | PermissionStatus::NotDetermined => {}
         }
 
-        let chosen = self.device.clone();
+        let choice = self.choice.clone();
         self.capture = Some(Capture::start(
             "mneme-mic",
             move || CpalBackend {
                 host: cpal::default_host(),
-                chosen,
+                choice,
             },
             Speaker::Me,
             start,
@@ -197,8 +232,8 @@ impl AudioSource for MicSource {
 
 struct CpalBackend {
     host: cpal::Host,
-    /// The chosen device's id, or `None` for the default.
-    chosen: Option<String>,
+    /// The chosen device, read each time the device is looked up.
+    choice: MicChoice,
 }
 
 impl CpalBackend {
@@ -206,7 +241,7 @@ impl CpalBackend {
     /// default.
     fn device(&self) -> Option<cpal::Device> {
         let default = self.host.default_input_device();
-        let Some(chosen) = self.chosen.as_deref() else {
+        let Some(chosen) = self.choice.get() else {
             return default;
         };
         let connected: Vec<cpal::Device> = self
@@ -215,7 +250,7 @@ impl CpalBackend {
             .map(Iterator::collect)
             .unwrap_or_default();
         let id = device_to_use(
-            Some(chosen),
+            Some(&chosen),
             connected.iter().map(device_identity),
             default.as_ref().map(device_identity),
         )?;
@@ -384,7 +419,7 @@ mod tests {
     fn the_default_input_device_can_be_described() {
         let mut backend = CpalBackend {
             host: cpal::default_host(),
-            chosen: None,
+            choice: MicChoice::default(),
         };
         let Some(identity) = backend.current_device() else {
             println!("no default input device");
@@ -445,13 +480,22 @@ mod tests {
                 .all(|d| !d.id.is_empty() && !d.name.is_empty())
         );
         assert!(devices.iter().all(|d| d.name != SYSTEM_AUDIO_DEVICE_NAME));
-        // A chosen device that is connected is the one the backend opens.
+        // A chosen device that is connected is the one the backend opens,
+        // and a new choice is followed without a new backend.
         if let Some(first) = devices.first() {
+            let choice = MicChoice::new(Some(first.id.clone()));
             let mut backend = CpalBackend {
                 host: cpal::default_host(),
-                chosen: Some(first.id.clone()),
+                choice: choice.clone(),
             };
             assert_eq!(backend.current_device().as_deref(), Some(first.id.as_str()));
+            if let Some(other) = devices.get(1) {
+                choice.set(Some(other.id.clone()));
+                assert_eq!(backend.current_device().as_deref(), Some(other.id.as_str()));
+            }
+            choice.set(None);
+            let default = devices.iter().find(|d| d.is_default).map(|d| d.id.as_str());
+            assert_eq!(backend.current_device().as_deref(), default);
         }
     }
 

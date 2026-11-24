@@ -12,7 +12,7 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use mneme_audio::{PermissionStatus, SourceStatus};
+use mneme_audio::{MicChoice, PermissionStatus, SourceStatus};
 use mneme_core::Speaker;
 use mneme_pipeline::{
     AudioError, AudioSource, EndReason, Language, RecorderOptions, Session, SessionConfig,
@@ -80,9 +80,10 @@ pub trait Host: Send + Sync + 'static {
     fn download_progress(&self, progress: &dto::DownloadProgress);
     /// Loads the model file. Slow (seconds); never called on the UI thread.
     fn load_transcriber(&self, model_path: &Path) -> Result<Arc<dyn Transcriber>>;
-    /// The sources of one meeting, microphone first. `microphone` is the
-    /// chosen input device's id, or `None` for the system default.
-    fn sources(&self, microphone: Option<&str>) -> Vec<Box<dyn AudioSource>>;
+    /// The sources of one meeting, microphone first. The microphone records
+    /// the device `microphone` names, and follows it when it changes during
+    /// the meeting.
+    fn sources(&self, microphone: &MicChoice) -> Vec<Box<dyn AudioSource>>;
     /// The input devices connected now.
     fn microphones(&self) -> Vec<dto::Microphone>;
     fn recorder_options(&self) -> RecorderOptions {
@@ -243,6 +244,10 @@ pub struct AppCore {
     /// What this run's recordings learned about the system audio
     /// permission, the only way to know it without private API.
     system_audio_seen: Mutex<SystemAudioSeen>,
+    /// The microphone in the settings, shared with the recording's
+    /// microphone source so a change in Settings reaches a meeting that is
+    /// recording (within about half a second).
+    microphone: MicChoice,
     /// Never locked before `recording`: the order is `recording`, `warm`.
     warm: Mutex<Warm>,
     /// Signalled whenever a load ends.
@@ -283,6 +288,7 @@ impl AppCore {
             log(format_args!("settings: {warning}"));
         }
         let store = open_store(&settings.get().meetings_root)?;
+        let microphone = MicChoice::new(settings.get().microphone_id);
         Ok(Arc::new(Self {
             host,
             settings,
@@ -292,6 +298,7 @@ impl AppCore {
             changed: Condvar::new(),
             quitting: AtomicBool::new(false),
             system_audio_seen: Mutex::default(),
+            microphone,
             warm: Mutex::default(),
             warm_changed: Condvar::new(),
             tick,
@@ -550,8 +557,7 @@ impl AppCore {
                 let mut config = SessionConfig::new(Language::english());
                 config.audio_dir = Some(meeting.folder.clone());
                 config.recorder = self.host.recorder_options();
-                let microphone = self.settings.get().microphone_id;
-                let sources = self.host.sources(microphone.as_deref());
+                let sources = self.host.sources(&self.microphone);
                 Session::start(sources, Arc::clone(&engine), writer, config).map_err(msg)
             });
         match started {
@@ -974,10 +980,12 @@ impl AppCore {
     pub fn update_settings(self: &Arc<Self>, patch: &SettingsPatch) -> Result<Settings> {
         let before = self.settings.get().default_model_id;
         let result = self.apply_settings(patch);
-        if let Ok(after) = &result
-            && after.default_model_id != before
-        {
-            self.warm_up();
+        if let Ok(after) = &result {
+            // Also switches the microphone of a meeting that is recording.
+            self.microphone.set(after.microphone_id.clone());
+            if after.default_model_id != before {
+                self.warm_up();
+            }
         }
         result
     }

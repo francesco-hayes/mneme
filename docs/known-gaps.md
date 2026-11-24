@@ -40,7 +40,7 @@ What that report does not tell us, because the details were not recorded: whethe
 - A model download is refused up front when the disk is too full (029).
 - New meeting no longer waits for the model to load: it is kept warm between meetings (030).
 - "Mic only" shows in the recording bar on every screen; Home's New meeting reads "Starting…" while any start loads; the Dock icon goes to the live meeting (031).
-- The microphone can be chosen in Settings; an unplugged choice falls back to the system default until it is back (032).
+- The microphone can be chosen in Settings, and a change applies at once, also during a meeting; an unplugged choice falls back to the system default until it is back (032).
 
 ## Unfinished work
 

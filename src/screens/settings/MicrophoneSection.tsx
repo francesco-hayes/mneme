@@ -46,7 +46,7 @@ export function MicrophoneSection({ microphone }: MicrophoneSectionProps) {
         <GroupRow
           label="Record my side with"
           labelId={labelId}
-          description="A change applies from the next meeting."
+          description="Switches right away, also during a meeting."
           below={
             <>
               {chosenMissing && (
