@@ -1,71 +1,11 @@
-// Folders on Home (issue 036). The backend calls them collections: folders of
+// The folder dialogs (issue 036): New folder…, Rename…, Delete… and a
+// meeting's Move to…. The backend calls folders collections: folders of
 // meeting folders in the meetings root.
 
 import { type KeyboardEvent, useId, useState } from "react";
-import { ConfirmDialog, PlusIcon } from "../../components";
-import { cx } from "../../lib/cx";
+import { ConfirmDialog } from "../../components";
 import { errorMessage } from "../../lib/errors";
-import { ALL, collectionOf, type FolderView, sameView } from "./folderView";
 import styles from "./folders.module.css";
-
-export interface FolderBarProps {
-  collections: readonly string[];
-  view: FolderView;
-  onSelect: (view: FolderView) => void;
-  onNewFolder: () => void;
-}
-
-/**
- * The row of folders above the list: All, Unfiled (once there are folders),
- * each folder, and New folder…. The chosen one is pressed.
- */
-export function FolderBar({
-  collections,
-  view,
-  onSelect,
-  onNewFolder,
-}: FolderBarProps) {
-  const choices: { label: string; view: FolderView }[] = [
-    { label: "All", view: ALL },
-    ...(collections.length > 0
-      ? [{ label: "Unfiled", view: { kind: "unfiled" } as FolderView }]
-      : []),
-    ...collections.map((name) => ({
-      label: name,
-      view: { kind: "collection", name } as FolderView,
-    })),
-  ];
-  return (
-    <nav aria-label="Folders" className={styles.bar}>
-      {choices.map((choice) => {
-        const pressed = sameView(choice.view, view);
-        return (
-          <button
-            key={`${choice.view.kind}:${collectionOf(choice.view) ?? ""}`}
-            type="button"
-            aria-pressed={pressed}
-            className={cx(
-              styles.chip,
-              choice.view.kind === "collection" && styles.folder,
-              pressed && styles.pressed,
-            )}
-            onClick={() => onSelect(choice.view)}
-          >
-            {choice.label}
-          </button>
-        );
-      })}
-      <button
-        type="button"
-        className={cx(styles.chip, styles.add)}
-        onClick={onNewFolder}
-      >
-        <PlusIcon />
-        New folder…
-      </button>
-    </nav>
-  );
-}
 
 export interface FolderNameDialogProps {
   /** Set when renaming: the folder's current name, also the field's start value. */

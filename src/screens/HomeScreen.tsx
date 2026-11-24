@@ -32,23 +32,16 @@ import {
 import { newestFirst } from "../lib/meetings";
 import { useLoad } from "../lib/useLoad";
 import { useWindowEvent } from "../lib/useWindowEvent";
+import { useLibrary } from "../state/library";
 import { useNavigation } from "../state/navigation";
 import { useRecording } from "../state/recording";
 import styles from "./HomeScreen.module.css";
 import {
   DeleteFolderDialog,
-  FolderBar,
   FolderNameDialog,
   MoveMeetingDialog,
 } from "./home/folders";
-import {
-  ALL,
-  collectionOf,
-  type FolderView,
-  inView,
-  rememberedFolder,
-  rememberFolder,
-} from "./home/folderView";
+import { ALL, collectionOf, inView } from "./home/folderView";
 
 export interface HomeScreenProps {
   /**
@@ -70,9 +63,10 @@ const isTextEntry = (target: EventTarget | null) =>
 
 /**
  * Home: the meetings, newest first, and the button that starts a new one.
- * The folder bar narrows the list to one folder, and New meeting starts the
- * meeting in that folder. The list is read again each time Home is shown,
- * when a recording starts or stops, and when the window gets focus back.
+ * The folder chosen in the sidebar narrows the list, and New meeting starts
+ * the meeting in that folder. The list is read again each time Home is
+ * shown, when a recording starts or stops, and when the window gets focus
+ * back.
  */
 export function HomeScreen({
   now = systemNow,
@@ -82,48 +76,20 @@ export function HomeScreen({
   const { navigate } = useNavigation();
   const { state: recording, isActive } = useRecording();
 
-  // "Today" is judged against the moment the list was read.
-  const loadMeetings = useCallback(async () => {
-    const [list, collections] = await Promise.all([
-      api.listMeetings(),
-      api.listCollections(),
-    ]);
-    return { list, collections, loadedAt: now() };
-  }, [now]);
-  const meetings = useLoad(loadMeetings);
+  // The meetings and folders, shared with the sidebar, and the folder shown.
+  const { data: meetings, view, setView: chooseView } = useLibrary();
   const models = useLoad(loadModels);
   const reloadMeetings = meetings.reload;
-
-  // The folder being shown. One that is gone (renamed or removed in Finder)
-  // falls back to All.
-  const [chosenView, setChosenView] = useState<FolderView>(rememberedFolder);
-  const collections =
-    meetings.status === "ready" ? meetings.data.collections : null;
-  const view: FolderView =
-    chosenView.kind === "collection" &&
-    collections !== null &&
-    !collections.includes(chosenView.name)
-      ? ALL
-      : chosenView;
-  const chooseView = useCallback((next: FolderView) => {
-    rememberFolder(next);
-    setChosenView(next);
-  }, []);
-  const [folderDialog, setFolderDialog] = useState<
-    "new" | "rename" | "delete" | null
-  >(null);
-
-  // A recording that starts adds a meeting and one that stops gives it a
-  // duration, wherever it was started or stopped from.
-  const recordingMeetingId = isActive ? recording.meetingId : null;
-  const listedFor = useRef(recordingMeetingId);
+  // Read again each time Home is shown again; the first read is the
+  // library's own. The library also reads it when a recording starts or
+  // stops and when the window gets focus back.
+  const loadedBeforeShown = useRef(meetings.status !== "loading");
   useEffect(() => {
-    if (listedFor.current === recordingMeetingId) return;
-    listedFor.current = recordingMeetingId;
-    reloadMeetings();
-  }, [recordingMeetingId, reloadMeetings]);
-
-  useWindowEvent("focus", reloadMeetings);
+    if (loadedBeforeShown.current) reloadMeetings();
+  }, [reloadMeetings]);
+  const [folderDialog, setFolderDialog] = useState<"rename" | "delete" | null>(
+    null,
+  );
 
   // Until the model list has loaded (or if it cannot be), the button stays
   // usable: a start that cannot work reports why.
@@ -185,8 +151,10 @@ export function HomeScreen({
     if (focusListRow(list, into)) event.preventDefault();
   });
 
-  // `loadedAt` is a new date for every read of the list, and only then.
-  const loadedAt = meetings.status === "ready" ? meetings.data.loadedAt : null;
+  // "Today" is judged against the moment the list was read: `loadedAt` is a
+  // new date for every read of the list, and only then.
+  const read = meetings.status === "ready" ? meetings.data : null;
+  const loadedAt = useMemo(() => (read === null ? null : now()), [read, now]);
   const dates = useMemo(
     () => (loadedAt === null ? null : { now: loadedAt, locale, timeZone }),
     [loadedAt, locale, timeZone],
@@ -201,7 +169,9 @@ export function HomeScreen({
         : undefined;
   const shown =
     meetings.status === "ready"
-      ? meetings.data.list.filter((meeting) => inView(view, meeting.collection))
+      ? meetings.data.meetings.filter((meeting) =>
+          inView(view, meeting.collection),
+        )
       : [];
   const folderName = collectionOf(view);
   const folderMenu = folderName !== null && (
@@ -273,14 +243,6 @@ export function HomeScreen({
           onRetry={meetings.reload}
         />
       )}
-      {meetings.status === "ready" && (
-        <FolderBar
-          collections={meetings.data.collections}
-          view={view}
-          onSelect={chooseView}
-          onNewFolder={() => setFolderDialog("new")}
-        />
-      )}
       {meetings.status === "ready" &&
         view.kind !== "all" &&
         shown.length === 0 && (
@@ -302,7 +264,7 @@ export function HomeScreen({
         )}
       {meetings.status === "ready" &&
         view.kind === "all" &&
-        meetings.data.list.length === 0 && (
+        meetings.data.meetings.length === 0 && (
           <EmptyState
             title="No meetings yet"
             description={
@@ -326,17 +288,6 @@ export function HomeScreen({
             listRef={listRef}
           />
         </>
-      )}
-      {folderDialog === "new" && (
-        <FolderNameDialog
-          save={(name) => api.createCollection(name)}
-          onDone={(name) => {
-            setFolderDialog(null);
-            chooseView({ kind: "collection", name });
-            reloadMeetings();
-          }}
-          onCancel={() => setFolderDialog(null)}
-        />
       )}
       {folderDialog === "rename" && folderName !== null && (
         <FolderNameDialog

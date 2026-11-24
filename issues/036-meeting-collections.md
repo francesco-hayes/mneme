@@ -56,8 +56,8 @@ In `src/lib/api/types.ts` and the PRD 05 block:
 
 ## UI
 
-- Home has a folder bar above the list: All, Unfiled when there are folders, each folder, and New folder…. The choice is remembered while the app runs.
-- In a folder, New meeting starts the meeting there, and the folder has its own ⋯ menu: Rename…, Delete….
+- A sidebar on the left of the window, on every screen but first run: All meetings and Unfiled with their counts, a Folders section with a + (New folder) and each folder with its count, and Settings at the bottom (the top bar's Settings button goes when the sidebar is there). Choosing an item shows it on Home from any screen; the choice is kept while the app runs. Added after the first build, replacing a row of folder buttons above the list.
+- In a folder, Home's title is the folder name, New meeting starts the meeting there, and the folder has its own ⋯ menu: Rename…, Delete….
 - Each row's ⋯ menu gets Move to…, a dialog listing No folder and every folder; disabled while the meeting records. In All, a row in a folder shows the folder name in its detail line.
 
 ## Acceptance criteria
@@ -122,7 +122,14 @@ Debug bundle (`pnpm tauri build --debug`), with `meetingsRoot` pointed at a thro
 - Rename… on a folder in the real app.
 - The refresh on window focus after a Finder change (seen on re-showing Home instead).
 
+### Sidebar (2026-11-24, second pass)
+
+The folder row on Home was replaced by a sidebar in the app shell (`src/shell/Sidebar.tsx`). `LibraryProvider` (`src/state/`) now reads the meetings and folders once for both the sidebar and Home, holds the chosen folder, and reads again when a recording starts or stops and on window focus; Home reads again when it is shown again. `SettingsInSidebarContext` tells `Screen` to leave its Settings button out inside the shell. Checked in the browser preview against the mock (`?mock=folders`), including the 640×480 minimum window with no horizontal scroll. Not yet seen in the real app.
+
 ### Follow-ups
+
+- Drag a meeting onto a folder in the sidebar.
+- Collapse the sidebar for narrow windows.
 
 - Choosing a folder from the menu bar or the shortcut (both start unfiled).
 - A meeting view does not show or change its folder; only Home does.

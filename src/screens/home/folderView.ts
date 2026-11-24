@@ -1,27 +1,10 @@
-// Which folder Home shows (issue 036), and the helpers around it.
+// Which meetings Home shows (issue 036): all, the unfiled ones, or one
+// folder's. The backend calls folders collections.
 
-/** Which meetings Home lists. */
 export type FolderView =
   { kind: "all" } | { kind: "unfiled" } | { kind: "collection"; name: string };
 
 export const ALL: FolderView = { kind: "all" };
-
-// The folder Home showed last, kept while the app runs so that opening a
-// meeting and coming back lands in the same folder.
-let remembered: FolderView = ALL;
-
-export function rememberedFolder(): FolderView {
-  return remembered;
-}
-
-export function rememberFolder(view: FolderView) {
-  remembered = view;
-}
-
-/** Forgets the remembered folder. For tests. */
-export function resetRememberedFolder() {
-  remembered = ALL;
-}
 
 /** The collection a view is in, for a start or a filter. */
 export function collectionOf(view: FolderView): string | null {

@@ -5,6 +5,7 @@ import type { MeetingSummary } from "../lib/api";
 import { mockApi, type MockOptions, mockScenarios } from "../lib/api/mock";
 import type { MockMeetingSeed } from "../lib/api/mockSeed";
 import { RecordingBar } from "../shell/RecordingBar";
+import { Sidebar } from "../shell/Sidebar";
 import { advance, renderShell, renderWithProviders } from "../test/render";
 import { HomeScreen } from "./HomeScreen";
 
@@ -836,20 +837,34 @@ describe("folders", () => {
     }),
   );
 
-  const folderBar = () =>
-    within(screen.getByRole("navigation", { name: "Folders" }));
-  const folder = (name: string) => folderBar().getByRole("button", { name });
+  /** Home with the sidebar beside it, as in the shell, with fixed dates. */
+  function renderWithSidebar() {
+    return renderWithProviders(
+      <>
+        <Sidebar />
+        <HomeScreen now={now} locale="en-US" timeZone="America/New_York" />
+      </>,
+    );
+  }
 
-  test("All lists every meeting and names each one's folder", async () => {
-    renderHome();
+  const sidebar = () =>
+    within(screen.getByRole("navigation", { name: "Sidebar" }));
+  const item = (name: string) => sidebar().getByRole("button", { name });
+  const count = (name: string) =>
+    item(name).querySelector("span[aria-hidden='true']")?.textContent;
+
+  test("the sidebar lists the folders with their counts, and All lists every meeting", async () => {
+    renderWithSidebar();
     await findList();
 
+    expect(item("All meetings")).toHaveAttribute("aria-current", "page");
+    expect(count("All meetings")).toBe("4");
+    expect(count("Unfiled")).toBe("2");
+    const folders = within(sidebar().getByRole("list", { name: "Folders" }));
     expect(
-      folderBar()
-        .getAllByRole("button")
-        .map((button) => button.textContent),
-    ).toEqual(["All", "Unfiled", "Acme", "Hiring", "New folder…"]);
-    expect(folder("All")).toHaveAttribute("aria-pressed", "true");
+      folders.getAllByRole("button").map((button) => button.textContent),
+    ).toEqual(["Acme2", "Hiring0"]);
+    expect(item("Settings")).toBeInTheDocument();
     expect(rowTexts()).toEqual([
       "StandupToday 2:30 PM · Acme32 min",
       "Design reviewYesterday 11:00 AM · Interrupted21 min",
@@ -860,13 +875,14 @@ describe("folders", () => {
 
   test("a folder narrows the list, and New meeting starts there", async () => {
     const user = userEvent.setup();
-    renderHome();
+    renderWithSidebar();
     await findList();
 
-    await user.click(folder("Acme"));
+    await user.click(item("Acme"));
 
     expect(await heading("Acme")).toBeInTheDocument();
-    expect(folder("Acme")).toHaveAttribute("aria-pressed", "true");
+    expect(item("Acme")).toHaveAttribute("aria-current", "page");
+    expect(item("All meetings")).not.toHaveAttribute("aria-current");
     expect(rowTexts()).toEqual([
       "StandupToday 2:30 PM32 min",
       "Quarterly planningOct 271 hr 5 min",
@@ -883,28 +899,45 @@ describe("folders", () => {
 
   test("Unfiled and an empty folder", async () => {
     const user = userEvent.setup();
-    renderHome();
+    renderWithSidebar();
     await findList();
 
-    await user.click(folder("Unfiled"));
+    await user.click(item("Unfiled"));
     expect(rowTexts()).toEqual([
       "Design reviewYesterday 11:00 AM · Interrupted21 min",
       "KickoffDec 3, 2025",
     ]);
 
-    await user.click(folder("Hiring"));
+    await user.click(item("Hiring"));
     expect(
       await content().findByText("No meetings in Hiring"),
     ).toBeInTheDocument();
   });
 
+  test("a folder chosen on another screen shows on Home", async () => {
+    const user = userEvent.setup();
+    renderShell({ route: { name: "settings" } });
+    await heading("Settings");
+    expect(item("Settings")).toHaveAttribute("aria-current", "page");
+
+    await user.click(await sidebar().findByRole("button", { name: "Acme" }));
+
+    expect(await heading("Acme")).toBeInTheDocument();
+    expect(within(await findList()).getAllByRole("listitem")).toHaveLength(2);
+    // The sidebar has Settings, so the top bar does not.
+    expect(topBar().queryByRole("button", { name: "Settings" })).toBeNull();
+  });
+
   test("with no meetings yet, a folder can still be made", async () => {
     resetMock({ meetings: [], collections: [] });
     const user = userEvent.setup();
-    renderHome();
+    renderWithSidebar();
 
     expect(await content().findByText("No meetings yet")).toBeInTheDocument();
-    await user.click(folder("New folder…"));
+    expect(
+      sidebar().getByText("Group meetings by client or project."),
+    ).toBeInTheDocument();
+    await user.click(item("New folder"));
     await user.type(
       screen.getByRole("textbox", { name: "Name" }),
       "Acme{Enter}",
@@ -914,30 +947,33 @@ describe("folders", () => {
     expect(
       await content().findByText("No meetings in Acme"),
     ).toBeInTheDocument();
+    expect(item("Acme")).toHaveAttribute("aria-current", "page");
   });
 
-  test("New folder… makes one and shows it", async () => {
+  test("New folder makes one and shows it", async () => {
     const user = userEvent.setup();
-    renderHome();
+    renderWithSidebar();
     await findList();
 
-    await user.click(folder("New folder…"));
+    await user.click(item("New folder"));
     const field = screen.getByRole("textbox", { name: "Name" });
     expect(field).toHaveFocus();
     expect(screen.getByRole("button", { name: "Create" })).toBeDisabled();
     await user.type(field, "Board{Enter}");
 
     expect(await heading("Board")).toBeInTheDocument();
-    expect(folder("Board")).toHaveAttribute("aria-pressed", "true");
+    expect(
+      await sidebar().findByRole("button", { name: "Board" }),
+    ).toHaveAttribute("aria-current", "page");
     expect(await mockApi.listCollections()).toContain("Board");
   });
 
   test("a taken name keeps the dialog open with the reason", async () => {
     const user = userEvent.setup();
-    renderHome();
+    renderWithSidebar();
     await findList();
 
-    await user.click(folder("New folder…"));
+    await user.click(item("New folder"));
     await user.type(screen.getByRole("textbox", { name: "Name" }), "acme");
     await user.click(screen.getByRole("button", { name: "Create" }));
 
@@ -945,9 +981,9 @@ describe("folders", () => {
     expect(screen.getByRole("alertdialog")).toBeInTheDocument();
   });
 
-  test("Move to… moves a meeting into a folder", async () => {
+  test("Move to… moves a meeting into a folder and the counts follow", async () => {
     const user = userEvent.setup();
-    renderHome();
+    renderWithSidebar();
     await findList();
 
     await user.click(
@@ -965,13 +1001,15 @@ describe("folders", () => {
     await waitFor(() =>
       expect(rowTexts()).toContain("KickoffDec 3, 2025 · Hiring"),
     );
+    expect(count("Hiring")).toBe("1");
+    expect(count("Unfiled")).toBe("1");
   });
 
   test("a folder's menu renames it and deletes it", async () => {
     const user = userEvent.setup();
-    renderHome();
+    renderWithSidebar();
     await findList();
-    await user.click(folder("Acme"));
+    await user.click(item("Acme"));
 
     await user.click(
       topBar().getByRole("button", { name: "Options for the folder Acme" }),
@@ -982,6 +1020,7 @@ describe("folders", () => {
     await user.clear(field);
     await user.type(field, "Acme Corp{Enter}");
     expect(await heading("Acme Corp")).toBeInTheDocument();
+    expect(item("Acme Corp")).toHaveAttribute("aria-current", "page");
     expect((await mockApi.getMeeting("standup")).collection).toBe("Acme Corp");
 
     await user.click(
@@ -997,5 +1036,8 @@ describe("folders", () => {
 
     expect(await heading("Meetings")).toBeInTheDocument();
     expect(await mockApi.listCollections()).toEqual(["Hiring"]);
+    await waitFor(() =>
+      expect(sidebar().queryByRole("button", { name: "Acme Corp" })).toBeNull(),
+    );
   });
 });

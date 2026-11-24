@@ -4,6 +4,7 @@ import { useLoad } from "./lib/useLoad";
 import { AppShell } from "./shell/AppShell";
 import styles from "./shell/AppShell.module.css";
 import { startupRoute } from "./shell/startup";
+import { LibraryProvider } from "./state/LibraryProvider";
 import { ModelLibraryProvider } from "./state/ModelLibraryProvider";
 import { NavigationProvider } from "./state/NavigationProvider";
 import { RecordingProvider } from "./state/RecordingProvider";
@@ -28,9 +29,11 @@ function Startup() {
     );
   }
   return (
-    <NavigationProvider initialRoute={startupRoute(models.data)}>
-      <AppShell />
-    </NavigationProvider>
+    <LibraryProvider>
+      <NavigationProvider initialRoute={startupRoute(models.data)}>
+        <AppShell />
+      </NavigationProvider>
+    </LibraryProvider>
   );
 }
 

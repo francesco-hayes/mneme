@@ -5,6 +5,7 @@ import { act, render, type RenderResult } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { vi } from "vitest";
 import { AppShell } from "../shell/AppShell";
+import { LibraryProvider } from "../state/LibraryProvider";
 import { ModelLibraryProvider } from "../state/ModelLibraryProvider";
 import { NavigationProvider } from "../state/NavigationProvider";
 import type { Route } from "../state/navigation";
@@ -16,7 +17,8 @@ interface ShellOptions {
 }
 
 /**
- * Renders `ui` inside the recording, model library and navigation providers,
+ * Renders `ui` inside the recording, model library, meeting library and
+ * navigation providers,
  * for a component that calls `useRecording`, `useModelLibrary` or
  * `useNavigation` (anything containing a `Screen` does).
  */
@@ -27,7 +29,9 @@ export function renderWithProviders(
   return render(
     <RecordingProvider>
       <ModelLibraryProvider>
-        <NavigationProvider initialRoute={route}>{ui}</NavigationProvider>
+        <LibraryProvider>
+          <NavigationProvider initialRoute={route}>{ui}</NavigationProvider>
+        </LibraryProvider>
       </ModelLibraryProvider>
     </RecordingProvider>,
   );
