@@ -420,7 +420,7 @@ impl Gate {
         self.state.1.notify_all();
     }
 
-    fn pass(&self) {
+    pub fn pass(&self) {
         let mut open = lock(&self.state.0);
         while !*open {
             open = self

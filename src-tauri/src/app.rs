@@ -44,6 +44,20 @@ pub const TICK: Duration = Duration::from_secs(1);
 /// still waiting is given up. Whatever was transcribed by then is kept.
 const QUIT_GRACE: Duration = Duration::from_secs(10);
 
+/// How long one transcriber call may run before Stop gives up on it, keeps
+/// what was transcribed and closes the meeting (also at quit).
+///
+/// A chunk holds at most 28 s of audio (`ChunkerConfig::default`). A call
+/// still running after 120 s is more than four times slower than real time
+/// on that chunk: a model that slow could not have kept up with the meeting
+/// anyway, so the call is taken to be stuck. The limit is per call, so a
+/// long backlog that the transcriber is working through is never cut short;
+/// the drain progress in the recording state shows it.
+#[cfg(not(test))]
+const CALL_LIMIT: Duration = Duration::from_secs(120);
+#[cfg(test)]
+const CALL_LIMIT: Duration = Duration::from_millis(300);
+
 const NOT_RECORDING: &str = "No meeting is being recorded.";
 const ALREADY_RECORDING: &str = "A meeting is already being recorded.";
 const NO_MODEL: &str = "No transcription model is installed. Download one in Settings.";
@@ -573,7 +587,8 @@ impl AppCore {
 
     /// `only`: stop only if this meeting is the one recording. `hurry`: give
     /// the transcriber [`QUIT_GRACE`] and then give up the audio still
-    /// waiting.
+    /// waiting. Either way a transcriber call that runs past [`CALL_LIMIT`]
+    /// is given up on, so this always returns.
     fn stop(&self, only: Option<&MeetingId>, hurry: bool) -> Result<dto::Meeting> {
         let (live, engine) = {
             let mut recording = self.recording();
@@ -593,17 +608,20 @@ impl AppCore {
         self.changed.notify_all();
         self.emit_state();
 
-        let summary = if hurry {
+        if hurry {
             live.session.request_stop();
-            live.session.wait_timeout(QUIT_GRACE).unwrap_or_else(|| {
+            if live.session.wait_timeout(QUIT_GRACE).is_none() {
                 live.session.abandon_backlog();
-                live.session.stop()
-            })
-        } else {
-            live.session.stop()
-        };
-        // The session's reference to the engine is gone once `stop` has
-        // returned, so this frees the model.
+            }
+        }
+        let summary = live.session.stop_or_give_up(CALL_LIMIT);
+        report_stuck(&live.meeting_id, &summary);
+        // The session's reference to the engine is gone once it has
+        // returned, so this frees the model. If the session gave up on a
+        // stuck transcriber call, the thread stuck in it still holds the
+        // engine: it is freed if that call ever returns, and if the app
+        // quits first, whisper.cpp aborts the process at exit (issue 005).
+        // The meeting is closed and its transcript sorted before that.
         drop(engine);
         let result = self.close_meeting(&live, &summary);
         // Idle only now: a `getMeeting` right after the idle state must see
@@ -872,6 +890,39 @@ fn open_store(root: &Path) -> Result<Arc<Store>> {
         Err(error) => log(format_args!("recovery of {}: {error}", root.display())),
     }
     Ok(Arc::new(store))
+}
+
+/// Logs a transcriber call that Stop gave up on, and what was lost with it.
+fn report_stuck(id: &MeetingId, summary: &SessionSummary) {
+    let Some(stuck) = summary
+        .dropped
+        .iter()
+        .find(|chunk| chunk.reason == mneme_pipeline::DropReason::TranscriberStuck)
+    else {
+        return;
+    };
+    let lost_ms: u64 = summary
+        .dropped
+        .iter()
+        .filter(|chunk| {
+            matches!(
+                chunk.reason,
+                mneme_pipeline::DropReason::TranscriberStuck
+                    | mneme_pipeline::DropReason::DrainAbandoned
+            )
+        })
+        .map(|chunk| chunk.duration_ms)
+        .sum();
+    log(format_args!(
+        "{id}: a transcriber call did not return within {} s; gave up on it \
+         ({} at {} ms) and on the audio still waiting: {} ms of speech not \
+         transcribed. {} lines were kept.",
+        CALL_LIMIT.as_secs(),
+        stuck.speaker,
+        stuck.start_ms,
+        lost_ms,
+        summary.lines
+    ));
 }
 
 /// Logs what went wrong in a session. The contract has no place for it.

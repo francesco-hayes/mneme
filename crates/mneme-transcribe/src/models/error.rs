@@ -38,6 +38,15 @@ pub enum ModelError {
     SizeMismatch { expected: u64, actual: u64 },
     /// The downloaded bytes do not have the SHA-256 the catalog lists.
     ChecksumMismatch { expected: String, actual: String },
+    /// The disk that holds the models folder has less free space than the
+    /// model needs plus a margin, so the download was not started.
+    NotEnoughSpace {
+        id: String,
+        name: String,
+        size_bytes: u64,
+        margin_bytes: u64,
+        free_bytes: u64,
+    },
     /// The download was cancelled.
     Cancelled,
     /// Reading or writing the models folder failed.
@@ -88,6 +97,20 @@ impl fmt::Display for ModelError {
                 f,
                 "the downloaded file failed its checksum: expected SHA-256 {expected}, got {actual}"
             ),
+            ModelError::NotEnoughSpace {
+                name,
+                size_bytes,
+                margin_bytes,
+                free_bytes,
+                ..
+            } => write!(
+                f,
+                "Not enough disk space to download {name}: it needs {} plus {} to spare, \
+                 and only {} is free.",
+                human_size(*size_bytes),
+                human_size(*margin_bytes),
+                human_size(*free_bytes)
+            ),
             ModelError::Cancelled => write!(f, "the download was cancelled"),
             ModelError::Io { path, message } => {
                 write!(f, "could not use {}: {message}", path.display())
@@ -97,3 +120,49 @@ impl fmt::Display for ModelError {
 }
 
 impl Error for ModelError {}
+
+/// A size as people read it, in the decimal units Finder uses: `466 MB`,
+/// `1.6 GB`.
+fn human_size(bytes: u64) -> String {
+    const MB: u64 = 1_000_000;
+    const GB: u64 = 1_000_000_000;
+    if bytes >= GB {
+        // One decimal, rounded down, so a size is never overstated.
+        format!("{}.{} GB", bytes / GB, bytes % GB / (GB / 10))
+    } else if bytes >= MB {
+        format!("{} MB", bytes / MB)
+    } else {
+        format!("{} KB", bytes.div_ceil(1_000))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sizes_read_like_finder() {
+        assert_eq!(human_size(0), "0 KB");
+        assert_eq!(human_size(1), "1 KB");
+        assert_eq!(human_size(200_000_000), "200 MB");
+        assert_eq!(human_size(487_601_967), "487 MB");
+        assert_eq!(human_size(1_624_555_275), "1.6 GB");
+        assert_eq!(human_size(3_095_033_483), "3.0 GB");
+    }
+
+    #[test]
+    fn not_enough_space_names_the_model_its_size_and_the_free_space() {
+        let error = ModelError::NotEnoughSpace {
+            id: "big".to_owned(),
+            name: "Big Model".to_owned(),
+            size_bytes: 1_624_555_275,
+            margin_bytes: 200_000_000,
+            free_bytes: 900_000_000,
+        };
+        assert_eq!(
+            error.to_string(),
+            "Not enough disk space to download Big Model: it needs 1.6 GB plus 200 MB \
+             to spare, and only 900 MB is free."
+        );
+    }
+}

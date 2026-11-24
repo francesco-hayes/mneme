@@ -15,7 +15,7 @@ use mneme_audio::{
 use mneme_core::{AudioFrame, Speaker};
 use mneme_transcribe::{Chunker, ChunkerConfig};
 
-use crate::shared::{DrainStart, Hooks, Shared, lock, panic_message};
+use crate::shared::{DrainStart, Hooks, Shared, SinkSlot, lock, panic_message};
 use crate::status::{EndReason, KeptAudio, SessionState};
 
 /// How long the thread waits for a frame before it looks at the stop flag,
@@ -32,6 +32,9 @@ pub(crate) struct CaptureParts {
     pub(crate) frames: FrameReceiver,
     pub(crate) chunker: ChunkerConfig,
     pub(crate) audio: Option<AudioKeeper>,
+    /// The sink, to finalize here if the session gives up on the
+    /// transcription thread.
+    pub(crate) sink: SinkSlot,
     pub(crate) hooks: Hooks,
 }
 
@@ -43,6 +46,7 @@ pub(crate) struct CaptureParts {
 pub(crate) fn run(shared: Arc<Shared>, parts: CaptureParts, worker: JoinHandle<()>) {
     // If anything below unwinds, the summary is still published.
     let _publish = PublishOnUnwind(&shared);
+    let sink = Arc::clone(&parts.sink);
 
     // A panic in here drops the recorder, which stops the sources.
     let captured = catch_unwind(AssertUnwindSafe(|| capture(&shared, parts, &worker)));
@@ -90,15 +94,40 @@ pub(crate) fn run(shared: Arc<Shared>, parts: CaptureParts, worker: JoinHandle<(
     // The sources ending by themselves also makes an abandoned backlog go.
     shared.drop_abandoned();
 
-    if let Err(panic) = worker.join() {
-        let message = format!(
-            "the transcription thread panicked: {}",
-            panic_message(panic.as_ref())
-        );
-        shared.worker_died(&message);
-        lock(&shared.inner).internal_errors.push(message);
+    if wait_for_worker(&shared, &sink) {
+        if let Err(panic) = worker.join() {
+            let message = format!(
+                "the transcription thread panicked: {}",
+                panic_message(panic.as_ref())
+            );
+            shared.worker_died(&message);
+            lock(&shared.inner).internal_errors.push(message);
+        }
+    } else {
+        // Given up on: the thread is left to itself (dropping its handle
+        // detaches it) and ends if its transcriber call ever returns.
+        drop(worker);
     }
     shared.publish_summary();
+}
+
+/// Waits until the transcription thread ends or the session gives up on it.
+/// `true` if it ended (or is about to: it has finalized the sink), `false`
+/// if it was given up on, in which case its chunk in work is listed as
+/// dropped and the sink has been finalized here.
+fn wait_for_worker(shared: &Shared, sink: &SinkSlot) -> bool {
+    let mut inner = lock(&shared.inner);
+    while !inner.worker_exited && !shared.giving_up() {
+        inner = shared
+            .worker_changed
+            .wait(inner)
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+    }
+    if inner.worker_exited {
+        return true;
+    }
+    drop(inner);
+    !shared.detach_worker(sink)
 }
 
 /// Publishes the summary if the capture thread unwinds past its own
@@ -135,6 +164,7 @@ fn capture(shared: &Shared, parts: CaptureParts, worker: &JoinHandle<()>) -> Cap
         frames,
         chunker,
         audio,
+        sink: _,
         hooks,
     } = parts;
     let mut state = CaptureState {

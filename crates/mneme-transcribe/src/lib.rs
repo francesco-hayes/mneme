@@ -60,8 +60,9 @@ mod whisper;
 pub use chunker::{Chunk, Chunker, ChunkerConfig, ChunkerStats};
 pub use fake::{FakeCall, FakeTranscriber};
 pub use models::{
-    DownloadHandle, DownloadProgress, DownloadState, MODEL_HOST, MODEL_REPOSITORY, MODEL_REVISION,
-    ModelError, ModelInfo, ModelSpec, ModelStore, catalog, find_model, installed_model_path,
+    DOWNLOAD_SPACE_MARGIN, DownloadHandle, DownloadProgress, DownloadState, MODEL_HOST,
+    MODEL_REPOSITORY, MODEL_REVISION, ModelError, ModelInfo, ModelSpec, ModelStore, catalog,
+    find_model, installed_model_path,
 };
 pub use transcriber::{
     Language, ParseLanguageError, TextSpan, TranscribeError, Transcriber, duration_ms,

@@ -13,7 +13,7 @@ use mneme_transcribe::Transcriber;
 
 use crate::capture::{self, AudioKeeper, CaptureParts};
 use crate::config::{SessionConfig, keep_audio_enabled};
-use crate::shared::{BoxedSink, Hooks, Shared, lock};
+use crate::shared::{BoxedSink, Hooks, Shared, SinkSlot, lock};
 use crate::status::{SessionStatus, SessionSummary};
 use crate::{TranscriptSink, worker};
 
@@ -125,13 +125,17 @@ impl Session {
         // its work. If one cannot be created, the other finds its channel
         // closed and ends: no source was started and no file was created.
         let (to_worker, worker_start) = mpsc::channel::<Arc<Shared>>();
+        let sink: SinkSlot = Arc::new(Mutex::new(Some(sink)));
+        let worker_sink = Arc::clone(&sink);
         let worker = thread::Builder::new()
             .name("mneme-transcribe".to_owned())
             .spawn(move || {
-                // The transcriber and the sink live and die with this
-                // closure, whether or not it gets to run the session.
+                // The transcriber lives and dies with this closure, whether
+                // or not it gets to run the session; so does the sink,
+                // unless the session gives up on this thread.
                 if let Ok(shared) = worker_start.recv() {
-                    worker::run(shared, transcriber, sink, hooks);
+                    let _exit = WorkerExit(Arc::clone(&shared));
+                    worker::run(shared, transcriber, worker_sink, hooks);
                 }
             })
             .map_err(|e| StartError::Thread(e.to_string()))?;
@@ -178,6 +182,7 @@ impl Session {
             frames,
             chunker: config.chunker,
             audio,
+            sink,
             hooks,
         };
 
@@ -256,6 +261,63 @@ impl Session {
         self.shared.drop_abandoned();
     }
 
+    /// Gives up on the transcriber: the session stops waiting for it and
+    /// ends now. Returns without waiting.
+    ///
+    /// For a transcriber call that never returns, which would otherwise make
+    /// [`stop`](Self::stop) wait forever; [`stop_or_give_up`](Self::stop_or_give_up)
+    /// calls this when a call runs too long. It stops the session and
+    /// abandons the backlog as [`abandon_backlog`](Self::abandon_backlog)
+    /// does, and also stops waiting for the chunk in work: that chunk is
+    /// listed in [`SessionSummary::dropped`] as
+    /// [`TranscriberStuck`](crate::DropReason::TranscriberStuck), the sink
+    /// is finalized on the session's capture thread, and `stop` returns.
+    /// Lines already written are kept.
+    ///
+    /// A call into the transcriber cannot be interrupted, so the
+    /// transcription thread stays inside it, holding its reference to the
+    /// transcriber. If the call ever returns, the thread writes nothing,
+    /// lets go of the transcriber and ends; until then the transcriber (a
+    /// loaded model) stays alive, even after the caller has dropped its own
+    /// reference. A `WhisperEngine` still alive when the process exits makes
+    /// whisper.cpp abort the process (issue 005).
+    ///
+    /// If the transcription thread is writing lines or finalizing when this
+    /// is called, the session lets it finish that first. Calling it again,
+    /// or after the session has ended, does nothing.
+    pub fn give_up_transcriber(&self) {
+        self.request_stop();
+        self.abandon_backlog();
+        self.shared.begin_giving_up();
+    }
+
+    /// As [`stop`](Self::stop), but gives up on the transcriber
+    /// ([`give_up_transcriber`](Self::give_up_transcriber)) if a single call
+    /// into it runs for `call_limit` or longer.
+    ///
+    /// The limit is per call, not for the whole drain: a long backlog that
+    /// the transcriber works through, however slowly, is transcribed to the
+    /// end. A call that fails is retried once, and each try has its own
+    /// limit.
+    pub fn stop_or_give_up(&self, call_limit: Duration) -> SessionSummary {
+        self.request_stop();
+        // Often enough that a stuck call is given up soon after the limit.
+        let poll = (call_limit / 10).clamp(Duration::from_millis(1), Duration::from_secs(1));
+        loop {
+            if let Some(summary) = self.wait_timeout(poll) {
+                return summary;
+            }
+            if self
+                .shared
+                .call_running_for()
+                .is_some_and(|running| running >= call_limit)
+            {
+                self.give_up_transcriber();
+                return self.wait();
+            }
+        }
+    }
+
     /// Stops the session and returns when the transcript is complete.
     ///
     /// In order: the sources are stopped (a source still stuck in its start
@@ -329,6 +391,16 @@ impl Session {
         if let Some(thread) = thread {
             let _ = thread.join();
         }
+    }
+}
+
+/// Tells the capture thread that the transcription thread has ended, also
+/// when it panics.
+struct WorkerExit(Arc<Shared>);
+
+impl Drop for WorkerExit {
+    fn drop(&mut self) {
+        self.0.worker_exited();
     }
 }
 

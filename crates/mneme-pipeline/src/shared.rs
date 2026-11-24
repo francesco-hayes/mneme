@@ -8,11 +8,17 @@
 //! - `queue`: the chunks waiting for the transcriber.
 //!
 //! Where both are needed they are taken in that order, `inner` first.
+//!
+//! A third lock, the [`SinkSlot`], holds the sink itself. It is held across
+//! calls into the sink, so only the transcription thread takes it, and the
+//! capture thread when the session gives up on the transcriber. It is
+//! always taken before the other two.
 
 use std::any::Any;
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Condvar, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 use mneme_audio::SourceStatus;
@@ -83,6 +89,10 @@ pub(crate) struct Inner {
     pub(crate) drain: Option<DrainStart>,
     /// When the transcription thread was through with its last chunk.
     pub(crate) drained_at: Option<Instant>,
+    /// When the transcriber call in progress began; `None` between calls.
+    pub(crate) call_started: Option<Instant>,
+    /// The transcription thread has ended (or is unwinding).
+    pub(crate) worker_exited: bool,
     /// What the sink's `finalize` returned, once it has been called.
     pub(crate) finalize: Option<Result<(), SinkError>>,
     /// Where audio is being kept, if it is. Only for the summary of a
@@ -99,9 +109,14 @@ pub(crate) struct Shared {
     pub(crate) max_backlog_ms: u64,
     pub(crate) stop: AtomicBool,
     pub(crate) abandon: AtomicBool,
+    /// The session stops waiting for the transcription thread.
+    pub(crate) give_up: AtomicBool,
     pub(crate) inner: Mutex<Inner>,
     /// Signalled, with `inner`, when the summary is published.
     pub(crate) done: Condvar,
+    /// Signalled, with `inner`, when the transcription thread ends or the
+    /// session gives up on it.
+    pub(crate) worker_changed: Condvar,
     pub(crate) queue: Mutex<ChunkQueue>,
     /// Signalled, with `queue`, when a chunk is pushed, the queue is closed
     /// or the backlog is abandoned.
@@ -121,6 +136,7 @@ impl Shared {
             max_backlog_ms: u64::try_from(max_backlog.as_millis()).unwrap_or(u64::MAX),
             stop: AtomicBool::new(false),
             abandon: AtomicBool::new(false),
+            give_up: AtomicBool::new(false),
             inner: Mutex::new(Inner {
                 state: SessionState::Starting,
                 end: None,
@@ -138,12 +154,15 @@ impl Shared {
                 stopping_since: None,
                 drain: None,
                 drained_at: None,
+                call_started: None,
+                worker_exited: false,
                 finalize: None,
                 audio_dir: None,
                 audio: None,
                 summary: None,
             }),
             done: Condvar::new(),
+            worker_changed: Condvar::new(),
             queue: Mutex::new(ChunkQueue::default()),
             queue_changed: Condvar::new(),
         }
@@ -151,6 +170,79 @@ impl Shared {
 
     pub(crate) fn stop_requested(&self) -> bool {
         self.stop.load(Ordering::SeqCst)
+    }
+
+    pub(crate) fn giving_up(&self) -> bool {
+        self.give_up.load(Ordering::SeqCst)
+    }
+
+    /// How long the transcriber call in progress has been running, if one
+    /// is.
+    pub(crate) fn call_running_for(&self) -> Option<Duration> {
+        lock(&self.inner).call_started.map(|at| at.elapsed())
+    }
+
+    /// Makes the session stop waiting for the transcription thread and
+    /// wakes the capture thread, which is waiting for it.
+    pub(crate) fn begin_giving_up(&self) {
+        self.give_up.store(true, Ordering::SeqCst);
+        let _inner = lock(&self.inner);
+        self.worker_changed.notify_all();
+    }
+
+    /// Called as the transcription thread ends, however it ends.
+    pub(crate) fn worker_exited(&self) {
+        let mut inner = lock(&self.inner);
+        inner.worker_exited = true;
+        inner.call_started = None;
+        self.worker_changed.notify_all();
+    }
+
+    /// Gives up on the transcription thread, which is stuck in a
+    /// transcriber call: takes the sink away from it, lists the chunk it is
+    /// working on and anything still waiting as dropped, and finalizes the
+    /// sink here. Returns `false`, having done nothing, if the thread got to
+    /// the end first and finalized the sink itself.
+    ///
+    /// Waits while the thread is writing a chunk's lines or finalizing.
+    pub(crate) fn detach_worker(&self, slot: &SinkSlot) -> bool {
+        let Some(mut sink) = lock(slot).take() else {
+            return false;
+        };
+        {
+            let mut inner = lock(&self.inner);
+            let mut queue = lock(&self.queue);
+            let running_for = inner.call_started.take().map(|at| at.elapsed());
+            if let Some(lost) = queue.abandon_work() {
+                inner.counts.dropped += 1;
+                inner.dropped.push(DroppedChunk {
+                    speaker: lost.speaker,
+                    start_ms: lost.start_ms,
+                    duration_ms: lost.duration_ms,
+                    reason: DropReason::TranscriberStuck,
+                });
+                inner.last_error = Some(format!(
+                    "the transcriber did not return from {}'s speech at {} ms{}; it was given up",
+                    lost.speaker,
+                    lost.start_ms,
+                    running_for.map_or_else(String::new, |d| format!(" after {} s", d.as_secs())),
+                ));
+            }
+            for chunk in queue.take_all() {
+                record_dropped(&mut inner, &chunk, DropReason::DrainAbandoned);
+            }
+            inner.drained_at.get_or_insert_with(Instant::now);
+        }
+        let finalized =
+            catch_unwind(AssertUnwindSafe(|| sink.finalize())).unwrap_or_else(|panic| {
+                Err(SinkError::new(format!(
+                    "the sink panicked in finalize: {}",
+                    panic_message(panic.as_ref())
+                )))
+            });
+        lock(&self.inner).finalize = Some(finalized);
+        drop(sink);
+        true
     }
 
     /// `true` once waiting chunks are to be thrown away instead of
@@ -295,10 +387,12 @@ impl Shared {
                 audio: Duration::from_millis(start.audio_ms),
                 chunks: start.chunks,
                 took: end.saturating_duration_since(start.at),
-                abandoned: inner
-                    .dropped
-                    .iter()
-                    .any(|chunk| chunk.reason == DropReason::DrainAbandoned),
+                abandoned: inner.dropped.iter().any(|chunk| {
+                    matches!(
+                        chunk.reason,
+                        DropReason::DrainAbandoned | DropReason::TranscriberStuck
+                    )
+                }),
             }
         });
         let (finalized, finalize_error) = match inner.finalize.clone() {
@@ -343,3 +437,8 @@ pub(crate) fn record_dropped(inner: &mut Inner, chunk: &Chunk, reason: DropReaso
 
 /// The sink as the transcription thread holds it.
 pub(crate) type BoxedSink = Box<dyn TranscriptSink>;
+
+/// Where the sink lives: the transcription thread writes through it, and the
+/// capture thread takes it away if the session gives up on that thread.
+/// Empty once the sink has been finalized.
+pub(crate) type SinkSlot = Arc<Mutex<Option<BoxedSink>>>;

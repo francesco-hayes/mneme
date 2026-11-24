@@ -21,7 +21,7 @@ use super::download::{
     redirect_target, sha256_file,
 };
 use super::error::ModelError;
-use super::store::ModelStore;
+use super::store::{DOWNLOAD_SPACE_MARGIN, ModelStore, free_space};
 use super::test_server::{Reply, TestServer};
 
 /// How long a test waits for something that should happen at once.
@@ -968,4 +968,47 @@ fn the_local_tiny_en_model_matches_its_catalog_entry() {
     let spec = find_model("tiny.en").expect("tiny.en is in the catalog");
     assert_eq!(fs::metadata(path).unwrap().len(), spec.size_bytes);
     assert_eq!(sha256_file(path).unwrap(), spec.sha256);
+}
+
+#[test]
+fn a_model_larger_than_the_free_space_is_refused_before_anything_starts() {
+    let dir = TempDir::new().unwrap();
+    let free = free_space(dir.path()).expect("the free space of a temp folder can be read");
+    // It would fit, but leave less than the margin free. (Exactly at the
+    // boundary the test would race other tests writing to the same disk.)
+    let size = free.saturating_sub(DOWNLOAD_SPACE_MARGIN / 2);
+    let spec = ModelSpec {
+        size_bytes: size,
+        ..spec_for("huge", "http://127.0.0.1:9/huge.bin".to_owned(), b"x")
+    };
+    let store = open_store(&dir, vec![spec]);
+    let (callback, events) = recorder();
+    let error = store.start_download("huge", callback).unwrap_err();
+    let ModelError::NotEnoughSpace {
+        id,
+        name,
+        size_bytes,
+        margin_bytes,
+        free_bytes,
+    } = &error
+    else {
+        panic!("expected NotEnoughSpace, got {error:?}");
+    };
+    assert_eq!((id.as_str(), name.as_str()), ("huge", "Test huge"));
+    assert_eq!((*size_bytes, *margin_bytes), (size, DOWNLOAD_SPACE_MARGIN));
+    // Other tests may write to the same disk meanwhile; it is about this much.
+    assert!(
+        free_bytes.abs_diff(free) < 1_000_000_000,
+        "{free_bytes} vs {free}"
+    );
+    let message = error.to_string();
+    assert!(
+        message.starts_with("Not enough disk space to download Test huge: it needs "),
+        "{message}"
+    );
+    assert!(message.contains("plus 200 MB to spare"), "{message}");
+    // Nothing started: no events, no file, nothing running.
+    assert_eq!(events.try_iter().count(), 0);
+    assert!(files_in(dir.path()).is_empty());
+    assert!(store.active_downloads().is_empty());
 }

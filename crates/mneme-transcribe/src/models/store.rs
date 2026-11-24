@@ -15,6 +15,11 @@ use super::download::{
 };
 use super::error::ModelError;
 
+/// Free space a download must leave on the disk, on top of the model
+/// itself: room for the meetings, the system and other apps, so that a model
+/// download never fills the disk.
+pub const DOWNLOAD_SPACE_MARGIN: u64 = 200_000_000;
+
 /// A listed catalog entry and whether it is installed. Field for field the
 /// frontend's `ModelInfo`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -210,9 +215,15 @@ impl ModelStore {
     ///
     /// Fails without starting anything, and without events, when the id is
     /// unknown ([`ModelError::UnknownModel`]), the model is installed
-    /// ([`ModelError::AlreadyInstalled`]) or a download of it is running
-    /// ([`ModelError::AlreadyDownloading`]). Different models can download at
-    /// the same time.
+    /// ([`ModelError::AlreadyInstalled`]), a download of it is running
+    /// ([`ModelError::AlreadyDownloading`]), or the disk that holds the
+    /// models folder has less free space than the model's size plus
+    /// [`DOWNLOAD_SPACE_MARGIN`] ([`ModelError::NotEnoughSpace`]). Different
+    /// models can download at the same time; the space check does not count
+    /// what another download running at that moment has still to write.
+    ///
+    /// If the free space cannot be read, the download starts anyway; a disk
+    /// that fills up then fails it with [`ModelError::Io`].
     pub fn start_download<F>(&self, id: &str, on_progress: F) -> Result<DownloadHandle, ModelError>
     where
         F: FnMut(DownloadProgress) + Send + 'static,
@@ -231,6 +242,17 @@ impl ModelStore {
                 return Err(ModelError::AlreadyInstalled {
                     id: spec.id,
                     name: spec.name,
+                });
+            }
+            if let Ok(free_bytes) = free_space(&self.inner.dir)
+                && free_bytes < spec.size_bytes.saturating_add(DOWNLOAD_SPACE_MARGIN)
+            {
+                return Err(ModelError::NotEnoughSpace {
+                    id: spec.id,
+                    name: spec.name,
+                    size_bytes: spec.size_bytes,
+                    margin_bytes: DOWNLOAD_SPACE_MARGIN,
+                    free_bytes,
                 });
             }
             active.insert(spec.id.clone(), cancel.clone());
@@ -389,6 +411,15 @@ impl Drop for Registration {
     fn drop(&mut self) {
         self.inner.active().remove(&self.id);
     }
+}
+
+/// Bytes free for this user on the disk that holds `dir` (`statvfs`'s
+/// `f_bavail`, which leaves out blocks reserved for the system). On APFS it
+/// does not count purgeable space, so it can be less than Finder shows as
+/// available; the check errs on the side of refusing.
+pub(crate) fn free_space(dir: &Path) -> io::Result<u64> {
+    let stats = rustix::fs::statvfs(dir)?;
+    Ok(stats.f_bavail.saturating_mul(stats.f_frsize))
 }
 
 fn not_installed(spec: &ModelSpec) -> ModelError {

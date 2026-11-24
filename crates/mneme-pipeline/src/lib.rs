@@ -22,7 +22,7 @@
 //!
 //! | Piece | What it is |
 //! | --- | --- |
-//! | [`Session`] | The handle: `start`, `status`, `elapsed`, `stop`, `request_stop`, `abandon_backlog`, `wait`. `Send + Sync`. |
+//! | [`Session`] | The handle: `start`, `status`, `elapsed`, `stop`, `stop_or_give_up`, `request_stop`, `abandon_backlog`, `give_up_transcriber`, `wait`. `Send + Sync`. |
 //! | [`SessionConfig`] | Language, the folder for kept audio, the backlog limit, chunker and recorder settings. |
 //! | [`SessionStatus`] | A snapshot for the UI: state, meeting time, lines, backlog, each source's phase, drain progress. |
 //! | [`SessionSummary`] | What `stop` returns: duration, line count, each source's outcome, every failure and every dropped chunk. |
@@ -60,7 +60,8 @@
 //! | --- | --- |
 //! | A source fails to start, starts late or dies | The other source carries on. The dead source's chunker is flushed at once, so its last words are transcribed. Its phase and errors are in the status and the summary. |
 //! | Every source has ended | The session finishes the transcript and ends by itself ([`EndReason::SourcesEnded`]); `stop` then returns the summary at once. |
-//! | The transcriber fails on a chunk (or panics) | Recorded with the chunk's speaker and time; the next chunk is transcribed as usual. |
+//! | The transcriber fails on a chunk (or panics) | Tried once more. If it fails again, a [`NOT_TRANSCRIBED`] line marks the gap at the chunk's time, the failure is recorded with the chunk's speaker and time, and the next chunk is transcribed as usual. |
+//! | A transcriber call never returns | [`Session::stop_or_give_up`] gives up on it after a limit: the chunk in work and the backlog are listed as dropped, the sink is finalized and the summary published. The stuck thread cannot be killed; see [`Session::give_up_transcriber`]. |
 //! | The sink refuses a line (or panics) | Not retried, since the line may have been written. The line and the error are in the summary. |
 //! | The transcriber is slower than real time | Nothing is dropped; the status shows the backlog, and `stop` takes as long as the backlog needs. |
 //! | More than [`SessionConfig::max_backlog`] is waiting (two hours by default) | New chunks are dropped, counted and listed, until there is room again. |
@@ -127,6 +128,12 @@ mod worker;
 extern crate self as mneme_pipeline;
 #[cfg(test)]
 mod tests;
+
+/// The text of the line written in place of a chunk the transcriber failed
+/// on twice: `[00:01:23] Me: [not transcribed]`. It cannot be mistaken for
+/// speech, because the Whisper engine removes every short bracketed tag like
+/// it from what it transcribes.
+pub const NOT_TRANSCRIBED: &str = "[not transcribed]";
 
 pub use config::{DEFAULT_MAX_BACKLOG, KEEP_AUDIO_ENV, SessionConfig, keep_audio_enabled};
 pub use session::{Session, StartError};

@@ -6,22 +6,24 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use mneme_core::Segment;
-use mneme_transcribe::{Chunk, TranscribeError, Transcriber};
+use mneme_transcribe::{Chunk, TextSpan, TranscribeError, Transcriber};
 
-use crate::shared::{BoxedSink, Hooks, Shared, lock, panic_message};
+use crate::shared::{Hooks, Shared, SinkSlot, lock, panic_message};
 use crate::status::{SinkFailure, TranscriptionFailure};
-use crate::{SinkError, TranscriptSink};
+use crate::{NOT_TRANSCRIBED, SinkError, TranscriptSink};
 
 /// Runs until the queue is closed and empty (or abandoned), then finalizes
 /// the sink.
 ///
-/// The transcriber and the sink are owned by this function, so they are
-/// gone when the thread ends, however it ends: that is what lets the caller
-/// drop the engine after `stop()`.
+/// The transcriber is owned by this function, so it is gone when the thread
+/// ends, however it ends: that is what lets the caller drop the engine
+/// after `stop()`. The sink is in `slot`; if the session gave up on this
+/// thread, the capture thread has taken it and finalized it, and nothing
+/// here touches it again.
 pub(crate) fn run(
     shared: Arc<Shared>,
     transcriber: Arc<dyn Transcriber>,
-    mut sink: BoxedSink,
+    slot: SinkSlot,
     hooks: Hooks,
 ) {
     let mut taken = 0_u64;
@@ -30,13 +32,20 @@ pub(crate) fn run(
         if hooks.worker_panics_at_chunk == Some(taken) {
             panic!("test hook: the transcription thread panics");
         }
-        transcribe_chunk(&shared, transcriber.as_ref(), sink.as_mut(), chunk);
+        transcribe_chunk(&shared, transcriber.as_ref(), &slot, chunk);
     }
     // Before anything that could still fail: the engine must not be kept
     // alive by a sink that is slow or stuck in `finalize`.
     drop(transcriber);
-    lock(&shared.inner).drained_at = Some(Instant::now());
 
+    // Held through `finalize`, so the capture thread cannot take the sink
+    // half-way through.
+    let mut slot = lock(&slot);
+    let Some(sink) = slot.as_mut() else {
+        // Given up on: the capture thread finalized the sink.
+        return;
+    };
+    lock(&shared.inner).drained_at = Some(Instant::now());
     let finalized = catch_unwind(AssertUnwindSafe(|| sink.finalize())).unwrap_or_else(|panic| {
         Err(SinkError::new(format!(
             "the sink panicked in finalize: {}",
@@ -44,7 +53,8 @@ pub(crate) fn run(
         )))
     });
     lock(&shared.inner).finalize = Some(finalized);
-    drop(sink);
+    // Dropped here, still under the lock.
+    slot.take();
 }
 
 /// Blocks until there is a chunk to transcribe. `None` when the queue is
@@ -74,42 +84,77 @@ fn next_chunk(shared: &Shared) -> Option<Chunk> {
     None
 }
 
-/// Transcribes one chunk and writes its lines. Nothing in here can take the
-/// thread down: a transcriber or sink that fails or panics is recorded and
-/// the next chunk gets its turn.
-fn transcribe_chunk(
+/// One transcriber call, with the time it started kept for
+/// [`Session::stop_or_give_up`](crate::Session::stop_or_give_up). Nothing
+/// it does can take the thread down: a panic comes back as an error.
+fn call(
     shared: &Shared,
     transcriber: &dyn Transcriber,
-    sink: &mut dyn TranscriptSink,
-    chunk: Chunk,
-) {
-    let speaker = chunk.speaker;
-    let start_ms = chunk.start_ms;
-    let duration_ms = chunk.duration_ms();
-
+    chunk: &Chunk,
+) -> Result<Vec<TextSpan>, TranscribeError> {
+    lock(&shared.inner).call_started = Some(Instant::now());
     let result = catch_unwind(AssertUnwindSafe(|| {
         transcriber.transcribe(&chunk.samples, &shared.language)
     }));
-    // Audio retention: the samples are freed as soon as the transcriber has
-    // seen them, whatever it made of them.
-    drop(chunk);
-
-    let failure = match result {
-        Ok(Ok(spans)) => {
-            for span in spans {
-                // The line's time is the chunk's start plus the span's
-                // offset inside the chunk.
-                append_line(shared, sink, span.into_segment(speaker, start_ms));
-            }
-            None
-        }
-        Ok(Err(error)) => Some(error),
-        Err(panic) => Some(TranscribeError::Engine {
+    lock(&shared.inner).call_started = None;
+    result.unwrap_or_else(|panic| {
+        Err(TranscribeError::Engine {
             message: format!(
                 "the transcriber panicked: {}",
                 panic_message(panic.as_ref())
             ),
-        }),
+        })
+    })
+}
+
+/// Transcribes one chunk and writes its lines. A chunk the transcriber
+/// fails on (or panics on) is tried once more; if that fails too, a line
+/// marking the gap ([`NOT_TRANSCRIBED`]) is written in its place and the
+/// failure is recorded. Either way the next chunk gets its turn.
+fn transcribe_chunk(shared: &Shared, transcriber: &dyn Transcriber, slot: &SinkSlot, chunk: Chunk) {
+    let speaker = chunk.speaker;
+    let start_ms = chunk.start_ms;
+    let duration_ms = chunk.duration_ms();
+
+    let mut result = call(shared, transcriber, &chunk);
+    // Not when the session is giving up the audio still waiting, or this
+    // thread: a second try would only make the user wait longer.
+    if result.is_err() && !shared.giving_up() && !shared.discarding(&lock(&shared.queue)) {
+        result = call(shared, transcriber, &chunk);
+    }
+    // Audio retention: the samples are freed as soon as the transcriber has
+    // seen them, whatever it made of them.
+    drop(chunk);
+
+    // Held until the chunk is accounted for, so the capture thread cannot
+    // give up on this thread half-way through a chunk.
+    let mut slot = lock(slot);
+    let Some(sink) = slot.as_mut() else {
+        // The session gave up on this thread while the call ran: the chunk
+        // is listed as dropped and the sink is finalized. Nothing to write.
+        return;
+    };
+    let failure = match result {
+        Ok(spans) => {
+            for span in spans {
+                // The line's time is the chunk's start plus the span's
+                // offset inside the chunk.
+                append_line(shared, sink.as_mut(), span.into_segment(speaker, start_ms));
+            }
+            None
+        }
+        Err(error) => {
+            // The gap shows in the transcript, at the time of the speech
+            // that is missing.
+            let gap = Segment {
+                speaker,
+                start_ms,
+                end_ms: start_ms + duration_ms,
+                text: NOT_TRANSCRIBED.to_owned(),
+            };
+            append_line(shared, sink.as_mut(), gap);
+            Some(error)
+        }
     };
 
     let mut inner = lock(&shared.inner);

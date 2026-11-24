@@ -53,7 +53,8 @@ pub struct ChunkCounts {
     pub cut: u64,
     /// Chunks the transcriber returned a result for, with or without text.
     pub transcribed: u64,
-    /// Chunks the transcriber failed on.
+    /// Chunks the transcriber failed on twice. Each has a
+    /// [`NOT_TRANSCRIBED`](crate::NOT_TRANSCRIBED) line in the transcript.
     pub failed: u64,
     /// Chunks that were never given to the transcriber. Each one is in
     /// [`SessionSummary::dropped`] with the reason.
@@ -131,8 +132,10 @@ impl SessionStatus {
     }
 }
 
-/// A chunk the transcriber failed on. Its audio is gone; the session went on
-/// with the next chunk.
+/// A chunk the transcriber failed on twice (it is tried once more after a
+/// failure). Its audio is gone; a line reading
+/// [`NOT_TRANSCRIBED`](crate::NOT_TRANSCRIBED) marks the gap in the
+/// transcript, and the session went on with the next chunk.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TranscriptionFailure {
     /// Whose speech it was.
@@ -141,8 +144,8 @@ pub struct TranscriptionFailure {
     pub start_ms: u64,
     /// Length of the chunk.
     pub duration_ms: u64,
-    /// What the transcriber returned. A transcriber that panicked reads as
-    /// `TranscribeError::Engine` with the panic message.
+    /// What the transcriber returned the second time. A transcriber that
+    /// panicked reads as `TranscribeError::Engine` with the panic message.
     pub error: TranscribeError,
 }
 
@@ -170,6 +173,10 @@ pub enum DropReason {
     /// The transcription thread died with the chunk still waiting. See
     /// [`SessionSummary::internal_errors`].
     WorkerDied,
+    /// The transcriber was still working on this chunk when the session
+    /// gave up on it
+    /// ([`Session::give_up_transcriber`](crate::Session::give_up_transcriber)).
+    TranscriberStuck,
 }
 
 /// A chunk of speech that was cut and then not transcribed.
@@ -196,7 +203,8 @@ pub struct DrainSummary {
     /// From the end of capture until the last chunk was dealt with.
     pub took: Duration,
     /// The drain was cut short by
-    /// [`Session::abandon_backlog`](crate::Session::abandon_backlog).
+    /// [`Session::abandon_backlog`](crate::Session::abandon_backlog) or
+    /// [`Session::give_up_transcriber`](crate::Session::give_up_transcriber).
     pub abandoned: bool,
 }
 

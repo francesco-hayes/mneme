@@ -22,6 +22,22 @@ const NEVER: Duration = Duration::from_secs(3600);
 struct Spy {
     inner: FakeTranscriber,
     languages: Arc<Mutex<Vec<Language>>>,
+    hold: Option<Hold>,
+}
+
+/// Makes every call from the `from_call`th on (counted from 1) wait until
+/// `released` is set: a transcriber that never returns, until it does.
+#[derive(Clone)]
+struct Hold {
+    from_call: usize,
+    released: Arc<(Mutex<bool>, Condvar)>,
+}
+
+impl Hold {
+    fn release(&self) {
+        *self.released.0.lock().unwrap() = true;
+        self.released.1.notify_all();
+    }
 }
 
 impl Transcriber for Spy {
@@ -30,7 +46,17 @@ impl Transcriber for Spy {
         samples: &[f32],
         language: &Language,
     ) -> std::result::Result<Vec<TextSpan>, TranscribeError> {
-        self.languages.lock().unwrap().push(language.clone());
+        let call = {
+            let mut languages = self.languages.lock().unwrap();
+            languages.push(language.clone());
+            languages.len()
+        };
+        if let Some(hold) = self.hold.as_ref().filter(|hold| call >= hold.from_call) {
+            let mut released = hold.released.0.lock().unwrap();
+            while !*released {
+                released = hold.released.1.wait(released).unwrap();
+            }
+        }
         self.inner.transcribe(samples, language)
     }
 }
@@ -46,6 +72,8 @@ struct TestHost {
     languages: Arc<Mutex<Vec<Language>>>,
     /// When set, `load_transcriber` waits for a message before returning.
     load_gate: Mutex<Option<Receiver<()>>>,
+    /// When set, the engine's calls block from a given call on.
+    hold: Option<Hold>,
     pacing: Pacing,
     /// Length of each source's tape.
     tape_ms: u64,
@@ -72,6 +100,7 @@ impl TestHost {
             engine: Mutex::new(Weak::new()),
             languages: Arc::default(),
             load_gate: Mutex::new(None),
+            hold: None,
             pacing: Pacing::RealTime,
             tape_ms: 60_000,
             microphone: Mutex::new(PermissionStatus::Granted),
@@ -172,6 +201,7 @@ impl Host for TestHost {
         let engine = Arc::new(Spy {
             inner: FakeTranscriber::new(),
             languages: Arc::clone(&self.languages),
+            hold: self.hold.clone(),
         });
         *self.engine.lock().unwrap() = Arc::downgrade(&engine);
         Ok(engine)
@@ -840,4 +870,52 @@ fn a_meeting_that_loses_every_source_does_not_stay_recording() {
     assert_eq!(statuses[statuses.len() - 2..], ["stopping", "idle"]);
     assert_eq!(f.core.get_meeting(&id).unwrap().summary.status, "complete");
     assert_eq!(f.core.permissions().system_audio, "denied");
+}
+
+#[test]
+fn stop_gives_up_on_a_transcriber_call_that_never_returns_and_closes_the_meeting() {
+    // Me's chunk is transcribed; the call for Them's never returns.
+    let hold = Hold {
+        from_call: 2,
+        released: Arc::default(),
+    };
+    let f = Fixture::new(&["small"], NEVER, |host| host.hold = Some(hold.clone()));
+    let id = f.core.start_meeting().unwrap().summary.id;
+    f.wait_for_lines(&id, 1);
+    f.wait_for("the second call to be stuck", || {
+        f.host.languages.lock().unwrap().len() == 2
+    });
+
+    let asked = Instant::now();
+    let stopped = f.core.stop_meeting().unwrap();
+    // The limit under test is 300 ms; nothing else here takes seconds.
+    assert!(
+        asked.elapsed() < Duration::from_secs(10),
+        "{:?}",
+        asked.elapsed()
+    );
+    assert_eq!(stopped.summary.status, "complete");
+    assert_eq!(stopped.transcript_line_count, 1);
+    let transcript = f.core.get_transcript(&id).unwrap();
+    assert_eq!(transcript.len(), 1);
+    assert_eq!(transcript[0].speaker, "Me");
+    assert_eq!(f.core.recording_state(), dto::RecordingState::idle());
+    assert_eq!(
+        *f.host.on_disk_at_idle.lock().unwrap(),
+        [vec![MeetingStatus::Complete]]
+    );
+
+    // Only the thread stuck in the call still holds the engine; it lets go
+    // once the call returns.
+    assert!(f.host.engine_is_alive());
+    hold.release();
+    f.wait_for("the stuck thread to drop the engine", || {
+        !f.host.engine_is_alive()
+    });
+    // It wrote nothing more.
+    assert_eq!(f.core.get_transcript(&id).unwrap(), transcript);
+
+    // A new meeting starts as usual.
+    f.core.start_meeting().unwrap();
+    f.core.stop_meeting().unwrap();
 }

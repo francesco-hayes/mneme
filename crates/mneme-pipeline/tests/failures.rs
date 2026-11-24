@@ -11,8 +11,8 @@ use std::time::{Duration, Instant};
 use mneme_audio::{AudioError, SourcePhase};
 use mneme_core::Speaker;
 use mneme_pipeline::{
-    ChunkCounts, DropReason, DroppedChunk, EndReason, Session, SessionConfig, SessionState,
-    SinkError, SinkFailure, TranscriptionFailure,
+    ChunkCounts, DropReason, DroppedChunk, EndReason, NOT_TRANSCRIBED, Session, SessionConfig,
+    SessionState, SinkError, SinkFailure, TranscriptionFailure,
 };
 use mneme_transcribe::FakeTranscriber;
 
@@ -269,12 +269,13 @@ fn stop_racing_with_a_dying_source_always_returns_a_whole_summary() {
 }
 
 #[test]
-fn a_transcriber_error_on_one_chunk_is_recorded_and_the_session_continues() {
+fn a_chunk_that_fails_twice_leaves_a_marked_gap_and_the_session_continues() {
     watchdog(|| {
         let failed = engine_error("out of memory");
         let fake = Arc::new(
             FakeTranscriber::new()
                 .then_text("First.")
+                .then_error(engine_error("first try"))
                 .then_error(failed.clone())
                 .then_text("Third."),
         );
@@ -297,7 +298,7 @@ fn a_transcriber_error_on_one_chunk_is_recorded_and_the_session_continues() {
         .unwrap();
 
         // Still recording after the failure, and the status says so.
-        let status = wait_for_status(&session, "the third chunk", |s| s.lines == 2);
+        let status = wait_for_status(&session, "the third chunk", |s| s.lines == 3);
         assert_eq!(status.state, SessionState::Recording);
         assert_eq!(status.chunks.failed, 1);
         let last_error = status.last_error.expect("the failure is in the status");
@@ -305,7 +306,7 @@ fn a_transcriber_error_on_one_chunk_is_recorded_and_the_session_continues() {
         assert!(last_error.contains("1800 ms"), "{last_error}");
 
         let summary = session.stop();
-        assert_eq!(fake.call_count(), 3, "the failed chunk was not tried again");
+        assert_eq!(fake.call_count(), 4, "the failed chunk was tried once more");
         assert_eq!(
             summary.transcription_errors,
             [TranscriptionFailure {
@@ -324,11 +325,18 @@ fn a_transcriber_error_on_one_chunk_is_recorded_and_the_session_continues() {
                 dropped: 0
             }
         );
+        // The gap is in the transcript where the speech was.
         assert_eq!(
             sink.lines_of(Speaker::Me),
-            [(300, "First.".to_owned()), (3_800, "Third.".to_owned())]
+            [
+                (300, "First.".to_owned()),
+                (1_800, NOT_TRANSCRIBED.to_owned()),
+                (3_800, "Third.".to_owned())
+            ]
         );
-        assert_eq!(summary.lines, 2);
+        let gap = &sink.written()[1];
+        assert_eq!((gap.start_ms, gap.end_ms), (1_800, 2_600));
+        assert_eq!(summary.lines, 3);
         assert!(!summary.transcript_is_complete());
         assert!(summary.finalized);
         assert!(sink.finalized_once_at_the_end());
@@ -336,9 +344,107 @@ fn a_transcriber_error_on_one_chunk_is_recorded_and_the_session_continues() {
 }
 
 #[test]
+fn a_chunk_that_fails_once_is_tried_again_and_kept() {
+    watchdog(|| {
+        let fake = Arc::new(
+            FakeTranscriber::new()
+                .then_text("First.")
+                .then_error(engine_error("busy"))
+                .then_text("Second, on the second try."),
+        );
+        let sink = RecordingSink::new();
+        let session = Session::start(
+            sources([bursts(&[500, 2_000], 300, 4_000).source(Speaker::Me)]),
+            fake.clone(),
+            sink.for_session(),
+            config(),
+        )
+        .unwrap();
+        let summary = session.stop();
+        assert_eq!(fake.call_count(), 3);
+        assert_eq!(
+            sink.lines_of(Speaker::Me),
+            [
+                (300, "First.".to_owned()),
+                (1_800, "Second, on the second try.".to_owned())
+            ]
+        );
+        assert!(summary.transcription_errors.is_empty());
+        assert_eq!(summary.chunks.transcribed, 2);
+        assert_eq!(summary.chunks.failed, 0);
+        assert!(summary.transcript_is_complete());
+    });
+}
+
+#[test]
+fn the_gap_line_round_trips_through_the_store_in_time_order() {
+    watchdog(|| {
+        use mneme_store::{NewMeeting, StartTime, Store};
+        let tmp = tempfile::tempdir().unwrap();
+        let store = Store::open(tmp.path().join("meetings")).unwrap();
+        let meeting = store
+            .create_meeting(NewMeeting {
+                started_at: StartTime::parse_rfc3339("2026-11-24T10:00:00+01:00").unwrap(),
+                model: None,
+                language: None,
+            })
+            .unwrap();
+        // Them's chunk at 0.3 s is transcribed; Me's at 1.8 s fails twice.
+        let fake = Arc::new(
+            FakeTranscriber::new()
+                .then_text("Hello.")
+                .then_error(engine_error("one"))
+                .then_error(engine_error("two")),
+        );
+        let session = Session::start(
+            sources([
+                bursts(&[2_000], 300, 3_000).source(Speaker::Me),
+                bursts(&[500], 300, 3_000).source(Speaker::Them),
+            ]),
+            fake,
+            store.transcript_writer(&meeting.id).unwrap(),
+            config(),
+        )
+        .unwrap();
+        // Both tapes end by themselves.
+        let summary = session.wait();
+        assert!(summary.finalized);
+        assert_eq!(summary.transcription_errors.len(), 1);
+
+        let transcript = store.transcript(&meeting.id).unwrap();
+        assert_eq!(transcript.skipped, 0);
+        let lines: Vec<(u64, Speaker, &str)> = transcript
+            .lines
+            .iter()
+            .map(|l| (l.timestamp_ms, l.speaker, l.text.as_str()))
+            .collect();
+        assert_eq!(
+            lines,
+            [
+                (0, Speaker::Them, "Hello."),
+                (1_000, Speaker::Me, NOT_TRANSCRIBED)
+            ]
+        );
+        let file = std::fs::read_to_string(
+            store
+                .meeting(&meeting.id)
+                .unwrap()
+                .folder
+                .join("transcript.md"),
+        )
+        .unwrap();
+        assert!(
+            file == "[00:00:00] Them: Hello.\n[00:00:01] Me: [not transcribed]\n",
+            "{file:?}"
+        );
+    });
+}
+
+#[test]
 fn a_transcriber_that_fails_every_time_still_lets_the_session_stop() {
     watchdog(|| {
         let transcriber = Arc::new(TestTranscriber::new(|_, _| Err(engine_error("broken"))));
+        let calls = Arc::clone(&transcriber);
         let sink = RecordingSink::new();
         let session = Session::start(
             sources([bursts(&[500, 2_000, 3_500], 300, 5_000).source(Speaker::Me)]),
@@ -353,16 +459,24 @@ fn a_transcriber_that_fails_every_time_still_lets_the_session_stop() {
             summary.transcription_errors.len() as u64,
             summary.chunks.cut
         );
-        assert_eq!(summary.lines, 0);
-        assert_eq!(sink.events(), [SinkEvent::Finalize]);
+        assert_eq!(calls.entered() as u64, 2 * summary.chunks.cut);
+        // One gap line per chunk, and nothing else.
+        assert_eq!(summary.lines, summary.chunks.cut);
+        assert!(
+            sink.written()
+                .iter()
+                .all(|segment| segment.text == NOT_TRANSCRIBED)
+        );
+        assert!(sink.finalized_once_at_the_end());
     });
 }
 
 #[test]
 fn a_transcriber_that_panics_on_a_chunk_does_not_hang_stop_or_end_the_session() {
     watchdog(|| {
+        // The second chunk panics on both tries.
         let transcriber = Arc::new(TestTranscriber::new(|call, samples| {
-            if call == 2 {
+            if call == 2 || call == 3 {
                 panic!("scripted transcriber panic");
             }
             Ok(vec![whole(samples, format!("call {call}"))])
@@ -379,7 +493,7 @@ fn a_transcriber_that_panics_on_a_chunk_does_not_hang_stop_or_end_the_session() 
         )
         .unwrap();
 
-        let status = wait_for_status(&session, "the chunk after the panic", |s| s.lines == 2);
+        let status = wait_for_status(&session, "the chunk after the panic", |s| s.lines == 3);
         assert_eq!(status.state, SessionState::Recording);
         assert_eq!(status.fatal, None);
 
@@ -397,7 +511,11 @@ fn a_transcriber_that_panics_on_a_chunk_does_not_hang_stop_or_end_the_session() 
         );
         assert_eq!(
             sink.lines_of(Speaker::Me),
-            [(300, "call 1".to_owned()), (3_300, "call 3".to_owned())]
+            [
+                (300, "call 1".to_owned()),
+                (1_800, NOT_TRANSCRIBED.to_owned()),
+                (3_300, "call 4".to_owned())
+            ]
         );
         assert!(
             summary.internal_errors.is_empty(),
@@ -830,5 +948,111 @@ fn a_sink_blocked_on_a_line_delays_stop_but_not_the_recording() {
         let summary = stopper.join().unwrap();
         assert_eq!(summary.lines, 1);
         assert!(sink.finalized_once_at_the_end());
+    });
+}
+
+#[test]
+fn a_transcriber_call_that_never_returns_is_given_up_and_the_session_ends() {
+    watchdog(|| {
+        // The second call blocks until the gate opens, which it does only
+        // at the end of the test.
+        let gate = Gate::closed();
+        let _open = OpenOnDrop(gate.clone());
+        let held = gate.clone();
+        let transcriber = Arc::new(TestTranscriber::new(move |call, samples| {
+            if call == 2 {
+                held.pass();
+            }
+            Ok(vec![whole(samples, format!("call {call}"))])
+        }));
+        let sink = RecordingSink::new();
+        let session = Session::start(
+            sources([bursts(&[500, 2_000, 3_500], 300, 5_000).source(Speaker::Me)]),
+            transcriber.clone(),
+            sink.for_session(),
+            config(),
+        )
+        .unwrap();
+        wait_for("the second call to be stuck", || {
+            (transcriber.entered() == 2 && session.status().chunks.cut == 3).then_some(())
+        });
+
+        let asked = Instant::now();
+        let summary = session.stop_or_give_up(Duration::from_millis(300));
+        assert!(
+            asked.elapsed() < Duration::from_secs(5),
+            "{:?}",
+            asked.elapsed()
+        );
+
+        // What was transcribed is kept; the chunk in work and the one
+        // waiting are listed, and the sink is finalized all the same.
+        assert_eq!(sink.lines_of(Speaker::Me), [(300, "call 1".to_owned())]);
+        let lost: Vec<(u64, DropReason)> = summary
+            .dropped
+            .iter()
+            .map(|c| (c.start_ms, c.reason))
+            .collect();
+        assert_eq!(
+            lost,
+            // The one waiting goes first, as the session gives up.
+            [
+                (3_300, DropReason::DrainAbandoned),
+                (1_800, DropReason::TranscriberStuck)
+            ]
+        );
+        assert_eq!(
+            summary.chunks,
+            ChunkCounts {
+                cut: 3,
+                transcribed: 1,
+                failed: 0,
+                dropped: 2
+            }
+        );
+        assert!(summary.drain.abandoned);
+        assert!(summary.finalized);
+        assert!(sink.finalized_once_at_the_end());
+        assert!(sink.dropped_by_session(), "the sink was let go of");
+        assert_eq!(session.status().state, SessionState::Done);
+        assert_eq!(session.stop(), summary, "stop returns at once from now on");
+
+        // The stuck thread still holds the transcriber, and lets go of it
+        // once its call returns, writing nothing.
+        assert_eq!(Arc::strong_count(&transcriber), 2);
+        let events = sink.events();
+        gate.open();
+        wait_for("the stuck thread to let go of the transcriber", || {
+            (Arc::strong_count(&transcriber) == 1).then_some(())
+        });
+        assert_eq!(sink.events(), events);
+        assert_eq!(transcriber.entered(), 2, "nothing more was transcribed");
+    });
+}
+
+#[test]
+fn a_slow_drain_is_not_cut_short_by_the_call_limit() {
+    watchdog(|| {
+        // Each call takes 150 ms, the whole drain far longer than the
+        // 300 ms limit, but no single call reaches it.
+        let starts: Vec<u64> = (0..6).map(|n| 500 + n * 1_500).collect();
+        let fake = Arc::new(FakeTranscriber::new().with_delay(Duration::from_millis(150)));
+        let sink = RecordingSink::new();
+        let session = Session::start(
+            sources([bursts(&starts, 300, 10_000).source(Speaker::Me)]),
+            fake.clone(),
+            sink.for_session(),
+            config(),
+        )
+        .unwrap();
+        wait_for("every chunk to be cut", || {
+            (session.status().chunks.cut == 6).then_some(())
+        });
+        let summary = session.stop_or_give_up(Duration::from_millis(300));
+        assert!(summary.dropped.is_empty(), "{:?}", summary.dropped);
+        assert_eq!(summary.chunks.transcribed, 6);
+        assert_eq!(summary.lines, 6);
+        assert!(summary.transcript_is_complete());
+        assert_eq!(Arc::strong_count(&fake), 1);
     });
 }
