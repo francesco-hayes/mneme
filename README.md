@@ -2,13 +2,26 @@
 
 Local-only meeting notes for macOS. Mneme listens to a meeting, transcribes it on your Mac with a Whisper model, and keeps your notes and the transcript as plain Markdown files. Nothing leaves the machine: no accounts, no telemetry, and no network use apart from downloading the model you pick.
 
-Mneme works end to end: it records a meeting, writes the transcript as it goes, and saves the notes and transcript to the meetings folder. It also has a menu bar icon, a global shortcut, and a first-run flow that asks for permissions. It has had one real use so far, and several checks in the real app are still open. They are listed in [docs/known-gaps.md](docs/known-gaps.md). No signed or notarized release has been made.
+Mneme works end to end: it records a meeting, writes the transcript as it goes, and saves the notes and transcript to the meetings folder. It also has a menu bar icon, a global shortcut, and a first-run flow that asks for permissions. It has had one real use so far, and several checks in the real app are still open. They are listed in [docs/known-gaps.md](docs/known-gaps.md). Releases are not yet signed with an Apple Developer ID or notarized.
 
 - What it will do and why: [mneme-scope.md](mneme-scope.md)
 - Requirements per area: [prds/](prds/README.md)
 - Work items and their status: [issues/](issues/README.md)
 
+## Install
+
+Mneme runs on macOS 14.4 or later, on Apple Silicon (M1 or newer). There is no Windows or Linux version: capturing the other side of a call uses a macOS-only API.
+
+1. Download `Mneme-<version>-macos-arm64.dmg` from the [latest release](https://github.com/francesco-hayes/mneme/releases/latest).
+2. Open it and drag Mneme to Applications.
+3. Open Mneme. The first time, macOS says it cannot check the app for malicious software, because the app is not notarized yet. Choose Done, then open System Settings, Privacy & Security, scroll to "Mneme was blocked", and choose Open Anyway. You only do this once.
+4. Mneme asks for microphone and system audio access when you first record.
+
+`SHA256SUMS.txt` in each release lists the checksum of every file. A `.zip` of the app is there too, for anyone who prefers it to the disk image.
+
 ## Requirements
+
+To build from source:
 
 - macOS 14.4 or later on Apple Silicon
 - Rust (stable)

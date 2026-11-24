@@ -1,0 +1,104 @@
+# Builds the Mac app and attaches it to a GitHub release.
+#
+# Runs when a release is published (or by hand for an existing tag, to rebuild
+# its files). The tag must match the app version in Cargo.toml and
+# package.json, with or without a leading "v": tag v0.2.0 for version 0.2.0.
+#
+# The app is signed ad hoc, not with a Developer ID, and not notarized: there
+# is no Apple Developer account yet. People who download it approve it once in
+# System Settings, Privacy & Security, Open Anyway (see README, "Install").
+# Signed and notarized releases are scripts/release.sh, run by hand.
+#
+# Mac only, Apple Silicon only: system audio capture is macOS-only, and the
+# app needs macOS 14.4 or later.
+
+name: Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to build and upload files for, e.g. v0.1.0"
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  macos:
+    name: macOS (Apple Silicon)
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.TAG }}
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustc --version
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+
+      - name: Check the tag matches the app version
+        run: |
+          tag_version="${TAG#v}"
+          cargo_version="$(cargo metadata --no-deps --format-version 1 --locked \
+            | jq -r '.packages[] | select(.name == "mneme") | .version')"
+          node_version="$(node -p 'require("./package.json").version')"
+          echo "tag $TAG, Cargo.toml $cargo_version, package.json $node_version"
+          if [ "$tag_version" != "$cargo_version" ] || [ "$tag_version" != "$node_version" ]; then
+            echo "::error::Tag $TAG does not match the app version (Cargo.toml $cargo_version, package.json $node_version). Set the version in Cargo.toml ([workspace.package]) and package.json, commit, and tag that commit."
+            exit 1
+          fi
+          echo "VERSION=$cargo_version" >> "$GITHUB_ENV"
+
+      - name: Install dependencies
+        run: |
+          pnpm install --frozen-lockfile
+          cargo fetch --locked
+
+      - name: Local-only audit
+        run: scripts/audit-local-only.sh
+
+      - name: Build
+        run: pnpm tauri build --config src-tauri/tauri.github-release.conf.json
+
+      - name: Check the signature
+        run: |
+          app="target/release/bundle/macos/Mneme.app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          codesign -dv "$app" 2>&1 | grep -q '^Signature=adhoc'
+
+      - name: Collect files
+        run: |
+          mkdir -p dist-release
+          dmg="$(ls target/release/bundle/dmg/*.dmg)"
+          cp "$dmg" "dist-release/Mneme-$VERSION-macos-arm64.dmg"
+          ditto -c -k --keepParent target/release/bundle/macos/Mneme.app \
+            "dist-release/Mneme-$VERSION-macos-arm64.zip"
+          cd dist-release
+          shasum -a 256 -- *.dmg *.zip > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Upload to the release
+        run: gh release upload "$TAG" dist-release/* --clobber --repo "$GITHUB_REPOSITORY"

@@ -28,5 +28,5 @@ These were not in the scope doc. Each is a default picked to unblock the build.
 
 - Meetings root is `~/Documents/Mneme/`. Models and `settings.json` live in the app data folder (`~/Library/Application Support/app.mneme.desktop/`).
 - Bundle identifier is `app.mneme.desktop`.
-- Speaker bleed: v1 recommends headphones and does no echo cancellation. Still open in the scope doc's risk table.
+- Speaker bleed: v1 recommends headphones and does no echo cancellation (settled 2026-11-24).
 - Models come from the `ggerganov/whisper.cpp` repository on Hugging Face.

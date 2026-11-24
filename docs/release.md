@@ -1,8 +1,8 @@
 # Building, signing and releasing Mneme
 
-**A notarized release cannot be made yet.** It needs a paid Apple Developer account, which does not exist for this project at the time of writing (2026-11-12). The release script and its config are written and checked in dry-run mode only; they have never signed anything or contacted Apple. The dev-signing script has also not been run: creating the keychain identity is a step for the person who owns the Mac. Everything else on this page (unsigned builds, the local-only audit) works today.
+**A notarized release cannot be made yet.** It needs a paid Apple Developer account, which does not exist for this project at the time of writing (2026-11-12). The release script and its config are written and checked in dry-run mode only; they have never signed anything or contacted Apple. The dev-signing script has also not been run: creating the keychain identity is a step for the person who owns the Mac. Everything else on this page (unsigned builds, the [GitHub release](#github-release) of an unsigned app, the local-only audit) works today.
 
-Contents: [Build](#build) · [Dev signing](#dev-signing) · [Release](#release) · [Local-only audit](#local-only-audit) · [Wi-Fi-off test](#wi-fi-off-test) · [Before a release](#before-a-release) · [Manual test list](#manual-test-list)
+Contents: [Build](#build) · [Dev signing](#dev-signing) · [GitHub release](#github-release) · [Release](#release) · [Local-only audit](#local-only-audit) · [Wi-Fi-off test](#wi-fi-off-test) · [Before a release](#before-a-release) · [Manual test list](#manual-test-list)
 
 ## Build
 
@@ -71,7 +71,38 @@ codesign -d -r- target/debug/bundle/macos/Mneme.app            # requirement nam
 - To remove the certificate: `security delete-identity -c "Mneme Dev Signing" ~/Library/Keychains/login.keychain-db`.
 - A dev-signed build only runs without warnings on the Mac that holds the certificate. It is not a release.
 
+## GitHub release
+
+Publishing a release on GitHub builds the Mac app and attaches it to that release. This needs no Apple account and no secrets. The workflow is `.github/workflows/release.yml`.
+
+### Make one
+
+1. Set the version in two places, the same in both: `version` under `[workspace.package]` in `Cargo.toml`, and `version` in `package.json`. Commit and push.
+2. On GitHub, Releases, Draft a new release. Create a tag for that commit named after the version, for example `v0.2.0` (a leading `v` is optional). Write the notes and publish.
+3. The Release workflow starts (Actions tab) and takes about 15–25 minutes. When it finishes, the release has three files:
+   - `Mneme-<version>-macos-arm64.dmg`, the download for most people
+   - `Mneme-<version>-macos-arm64.zip`, the same app zipped
+   - `SHA256SUMS.txt`
+
+If the tag does not match the version, the workflow stops with an error saying so and uploads nothing. Fix the version, then either delete the release and tag and make them again, or run the workflow by hand: Actions, Release, Run workflow, and give it the tag. A run by hand replaces the files already on that release.
+
+### What it does
+
+On a GitHub-hosted Apple Silicon Mac (`macos-15`): installs Node 24, pnpm (the version in `package.json`) and stable Rust, checks the tag against the version, runs the [local-only audit](#local-only-audit), builds with `pnpm tauri build --config src-tauri/tauri.github-release.conf.json`, checks the signature, and uploads the files with `gh release upload`. The actions it uses are pinned to commit hashes.
+
+The overlay `src-tauri/tauri.github-release.conf.json` adds the disk image to the bundle targets and signs the app ad hoc (`signingIdentity: "-"`) with the hardened runtime off, the same way as an unsigned local build. An ad hoc signature seals the bundle, which a downloaded app on Apple Silicon needs to open at all, but it names no developer, so Gatekeeper blocks the first launch until the user chooses Open Anyway (README, "Install"). Permissions stay granted across launches of one download; a new version asks again, because its signature is different.
+
+### Limits
+
+- **Not notarized.** Switching the workflow to Developer ID signing and notarization needs the account described under [Release](#release), with the certificate and notary key stored as repository secrets. Until then `scripts/release.sh`, run by hand, is the only signed path.
+- **Apple Silicon only.** Intel Macs running macOS 14.4 could run Mneme, but whisper.cpp has not been built for `x86_64` here.
+- **No Windows or Linux.** System audio capture and Move to Trash are macOS-only; elsewhere the app would record the microphone only.
+- **No tests in the workflow.** Run the checks under [Before a release](#before-a-release) first. Some Rust tests read this Mac's real audio devices, which a hosted runner does not have.
+- **Not run on GitHub yet** as of 2026-11-24. The same build was run locally with the overlay (see issue 035).
+
 ## Release
+
+Signed with a Developer ID and notarized, run by hand on your Mac.
 
 ### What you need first
 
@@ -161,8 +192,9 @@ Optional, with the network on: while a meeting records, `lsof -nP -i -a -p "$(pg
 ## Before a release
 
 - [ ] `cargo test --workspace`, `pnpm test`, `pnpm lint` pass.
+- [ ] The version is the same in `Cargo.toml` and `package.json`, and the tag will match it.
 - [ ] `scripts/audit-local-only.sh` passes.
-- [ ] Look at `ureq` again. Version 3.5.2 was published on 2026-11-12, the same day it was adopted here, so it had no track record. Check its changelog and advisories, and whether a later version is the better pin.
+- [ ] Look at `ureq` again. Version 3.5.2 was published on 2026-11-12, the same day it was adopted here, so it had no track record. Check its changelog and advisories, and whether a later version is the better pin. Kept for now by Francesco on 2026-11-24.
 - [ ] Decide the two open points from issue 007: whether download redirects should be limited to Hugging Face hosts, and whether proxy or system trust store support is wanted.
 - [ ] The Wi-Fi-off test above.
 - [ ] The manual test list below.

@@ -18,15 +18,14 @@ What that report does not tell us, because the details were not recorded: whethe
 
 ## Open decisions for Francesco
 
-| Decision                                                          | Options                                                                                      | Where     |
-| ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | --------- |
-| Speech dropped when two hours of audio are queued                 | Keep the ceiling (protects memory) or remove it (matches "nothing is dropped")               | 009       |
-| HTTP client `ureq` 3.5.2 was published the day it was adopted     | Pin the previous release until it has aged, or keep                                          | 007, 025  |
-| Reading the system-audio permission                               | Keep "unknown" (public API only) or enable the private-API feature (rules out the App Store) | 003, 024  |
-| Speaker bleed without headphones                                  | Recommend headphones (today) or add echo cancellation                                        | scope doc |
-| First-run recommended model                                       | `small.en` stays while the benchmark is on hold; revisit if it feels slow or inaccurate      | 008, 020  |
-| A meetings folder synced from another Mac                         | Recovery assumes one running copy per folder                                                 | 013       |
-| Hiding a transcript's last line when its final newline is missing | Follows the crash-detection rule; one-place change to relax                                  | 011       |
+| Decision                                                          | Options                                                                                      | Where    |
+| ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | -------- |
+| Reading the system-audio permission                               | Keep "unknown" (public API only) or enable the private-API feature (rules out the App Store) | 003, 024 |
+| First-run recommended model                                       | `small.en` stays while the benchmark is on hold; revisit if it feels slow or inaccurate      | 008, 020 |
+| A meetings folder synced from another Mac                         | Recovery assumes one running copy per folder                                                 | 013      |
+| Hiding a transcript's last line when its final newline is missing | Follows the crash-detection rule; one-place change to relax                                  | 011      |
+
+Decided by Francesco on 2026-11-24: the two-hour backlog limit stays, to protect memory (009); v1 keeps recommending headphones, with no echo cancellation. `ureq` 3.5.2 (the model downloader) stays; its changelog and advisories are checked before a release (release.md).
 
 ## Fixed on 2026-11-24 (issues 028–031, not yet seen in the real app)
 

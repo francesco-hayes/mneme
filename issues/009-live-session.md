@@ -188,7 +188,7 @@ Also covered: stop twice, stop from three threads at once, stop right after star
 - **No real sources.** Nothing here has run with `MicSource` or `SystemAudioSource`. The manual check is open.
 - **A transcriber call that never returns hangs `stop()`** and `Drop`. `abandon_backlog` does not help, because the call in progress cannot be interrupted. `wait_timeout` lets a caller give up waiting, but the stuck thread then still holds the engine.
 - **`Drop` blocks for the full drain.** A caller that wants a short exit must call `abandon_backlog()` first.
-- **The backlog ceiling drops speech.** Reported, never silent, but it is a departure from the PRD. It has been tested with a 1 s limit, not at the 2 h default.
+- **The backlog ceiling drops speech.** Reported, never silent. Francesco chose to keep it on 2026-11-24, and PRD 03 now says so. It has been tested with a 1 s limit, not at the 2 h default.
 - **Dropped at the ceiling means the newest chunk.** No test or measurement says that is the better choice than dropping the oldest.
 - **Failed chunks are not retried** and their audio is gone. A transient engine error loses that chunk.
 - **A line refused by the sink is only in the summary.** If the caller ignores `sink_errors`, the text is lost.

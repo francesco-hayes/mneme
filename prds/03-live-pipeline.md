@@ -39,7 +39,7 @@ system source ► chunker(Them)┘
 
 - One Whisper worker serves both channels from one queue, oldest chunk first.
 - Each line's timestamp is the chunk's `start_ms` plus the segment's offset inside the chunk.
-- If the queue grows (model slower than real time), nothing is dropped. The session reports how far behind it is, and stop takes as long as the backlog needs.
+- If the queue grows (model slower than real time), nothing is dropped below two hours of queued audio. The session reports how far behind it is, and stop takes as long as the backlog needs. Past two hours a new chunk is dropped and reported, to protect memory (decided 2026-11-24, see issue 009).
 - An error in one channel (for example system audio permission revoked) does not stop the other. The session reports it.
 
 ### Audio retention
@@ -51,9 +51,9 @@ system source ► chunker(Them)┘
 
 Sources, the transcriber and the transcript sink are traits. Tests run the whole session with fake sources that play WAV files and a fake transcriber, with no microphone, model or permissions.
 
-## Open question
+## Speaker bleed
 
-Speaker bleed without headphones makes lines repeat and labels flip. Default for v1: recommend headphones, no echo cancellation. Revisit after the first real calls.
+Without headphones, lines repeat and labels flip. Decided 2026-11-24: v1 recommends headphones and does no echo cancellation.
 
 ## Done when
 

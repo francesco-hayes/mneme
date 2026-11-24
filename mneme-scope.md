@@ -118,7 +118,7 @@ The first three can change the design, so they get settled in steps 1 and 2. The
 | Risk | Why it matters | Next step |
 | --- | --- | --- |
 | System audio API | ScreenCaptureKit needs Screen Recording permission and macOS 15 asks for it again over time. Core Audio taps ask for audio only but need macOS 14.2 or later. | Pick one in step 1, along with the minimum macOS version. |
-| Speaker bleed | Without headphones the mic hears the other side, so lines repeat and Them gets labeled Me. | Decide between requiring headphones in v1 and adding echo cancellation. |
+| Speaker bleed | Without headphones the mic hears the other side, so lines repeat and Them gets labeled Me. | Settled 2026-11-24: v1 recommends headphones; no echo cancellation. |
 | Whisper is not a streaming model | It needs chunks cut at silence, and it can invent text on silent audio. | Test chunking in step 2 and drop silent chunks. |
 | Slow models fall behind | A large model on an older Mac can run slower than real time, so the transcript is not ready at stop. | Measure in step 2 and set a target per model. |
 | Two channels finish out of order | Appended lines in transcript.md can land out of time order. | Sort the file by timestamp at stop. |
@@ -136,6 +136,8 @@ Newest first. Add a row whenever something is settled.
 
 | Date | Decision | Rationale |
 | --- | --- | --- |
+| 2026-11-24 | Keep the two-hour backlog limit: at the limit a new chunk is dropped and reported, not queued | Protects memory when the transcriber has stalled or is hours behind; only then does it act, and every hole is named in the transcript summary. |
+| 2026-11-24 | v1 recommends headphones and does no echo cancellation | Keeps v1 simple; revisit if bleed is a problem in real calls. |
 | 2026-11-12 | v1 is English only: no language setting in the UI; transcription runs as English | The app was only ever meant for English; a language picker is not MVP. The engine's language support stays in the code, unused. |
 | 2026-11-12 | Note timeline entries stay `{"t","text"}`: each saved state of a line is recorded, with no link to the text it replaced | Keeps the format as designed; the earliest entry for a text says when it was first typed, and v2 matches drafts of a growing line by prefix. |
 | 2026-11-12 | A second meeting started in the same minute gets a numeric folder suffix (`2026-10-27 1430 Meeting 2`) | Start, stop, start again within one minute wants the same folder name; a recording must never fail to start. Corrects the assumption in the folder-name row below. |
