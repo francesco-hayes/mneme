@@ -21,6 +21,8 @@ import type {
 const RECORDING_STATE_EVENT = "recording-state";
 const RECORDING_ERROR_EVENT = "recording-error";
 const DOWNLOAD_PROGRESS_EVENT = "download-progress";
+/** Sent by `src-tauri/src/tray.rs`: Open Mneme was chosen during a recording. */
+const OPEN_MEETING_EVENT = "open-meeting";
 
 /**
  * Calls a backend command. The backend rejects with a plain sentence; the UI
@@ -78,6 +80,7 @@ export const tauriApi: Api = {
     subscribe<RecordingState>(RECORDING_STATE_EVENT, cb),
   onRecordingError: (cb) =>
     subscribe<RecordingError>(RECORDING_ERROR_EVENT, cb),
+  onOpenMeeting: (cb) => subscribe<string>(OPEN_MEETING_EVENT, cb),
   listModels: () => call<ModelInfo[]>("list_models"),
   downloadModel: (id) => call<void>("download_model", { id }),
   cancelDownload: (id) => call<void>("cancel_download", { id }),

@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useId } from "react";
 import { Group, GroupRow, InlineError, Screen, Section } from "../components";
 import type { Settings } from "../lib/api";
 import { cx } from "../lib/cx";
@@ -9,8 +9,8 @@ import { useSettingSaver } from "./settings/useSettingSaver";
 import styles from "./SettingsScreen.module.css";
 
 /**
- * Settings: the transcription models and which one is the default, and the
- * global shortcut. Everything is saved as it is changed. The models, settings
+ * Settings: the transcription models and which one is the default, spellcheck
+ * in the notes, and the global shortcut. Everything is saved as it is changed. The models, settings
  * and downloads live in the model library, so the screen shows a download
  * exactly where it stands each time it is opened.
  */
@@ -46,10 +46,39 @@ function SettingsContent({ settings }: { settings: Settings }) {
     settings.defaultModelId,
   );
   const shortcut = useSettingSaver("globalShortcut", settings.globalShortcut);
+  const spellcheck = useSettingSaver("spellcheck", settings.spellcheck);
+  const spellcheckLabel = useId();
 
   return (
     <>
       <ModelsSection defaultModel={defaultModel} />
+
+      <Section title="Notes">
+        <Group>
+          <GroupRow
+            label="Check spelling"
+            labelId={spellcheckLabel}
+            description="Underline misspelled words while you type. Nothing is corrected for you."
+            below={
+              spellcheck.error !== null && (
+                <InlineError
+                  className={styles.message}
+                  message={`Could not change spellcheck: ${spellcheck.error}`}
+                />
+              )
+            }
+          >
+            <input
+              type="checkbox"
+              role="switch"
+              className={styles.switch}
+              aria-labelledby={spellcheckLabel}
+              checked={spellcheck.value}
+              onChange={(event) => void spellcheck.save(event.target.checked)}
+            />
+          </GroupRow>
+        </Group>
+      </Section>
 
       <Section title="Shortcut">
         <Group>

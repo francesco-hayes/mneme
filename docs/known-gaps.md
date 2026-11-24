@@ -23,17 +23,23 @@ What that report does not tell us, because the details were not recorded: whethe
 | Speech dropped when two hours of audio are queued                 | Keep the ceiling (protects memory) or remove it (matches "nothing is dropped")               | 009       |
 | HTTP client `ureq` 3.5.2 was published the day it was adopted     | Pin the previous release until it has aged, or keep                                          | 007, 025  |
 | Reading the system-audio permission                               | Keep "unknown" (public API only) or enable the private-API feature (rules out the App Store) | 003, 024  |
-| Spellcheck and autocorrect in the editor                          | Off today (CodeMirror's default); a one-line change                                          | 017       |
 | Speaker bleed without headphones                                  | Recommend headphones (today) or add echo cancellation                                        | scope doc |
-| First-run recommended model                                       | `small.en` is a placeholder until the benchmark is done                                      | 008, 020  |
+| First-run recommended model                                       | `small.en` stays while the benchmark is on hold; revisit if it feels slow or inaccurate      | 008, 020  |
 | A meetings folder synced from another Mac                         | Recovery assumes one running copy per folder                                                 | 013       |
 | Hiding a transcript's last line when its final newline is missing | Follows the crash-detection rule; one-place change to relax                                  | 011       |
 
+## Fixed on 2026-11-24 (issue 028, not yet seen in the real app)
+
+- Spellcheck is a setting (Settings, Notes, Check spelling), off by default. Autocorrect stays off.
+- A meeting that records the microphone only says so above the notes.
+- Open Mneme in the menu bar goes to the live meeting.
+- Only the model in use is locked from Delete during a recording.
+- The menu reads "Starting…", disabled, while a meeting loads its model.
+
 ## Unfinished work
 
-- **008 benchmark:** the `mneme-bench` tool is built and its tests pass, but no model has been benchmarked and there is no table. The agent was stopped before reporting, so its behavior is unreviewed. Models on disk: tiny.en, base, small, large-v3-turbo.
+- **008 benchmark (on hold by choice, 2026-11-24):** Francesco decided benchmarking is not needed for now. The `mneme-bench` tool is built and its tests pass, but no model has been benchmarked and there is no table. The agent was stopped before reporting, so its behavior is unreviewed. Models in `crates/mneme-transcribe/models/`: tiny.en, base, small, large-v3-turbo. Base and Small are now retired multilingual models, so resuming would first need base.en and small.en downloaded.
 - **Entitlements** are set (audio input only) but have never been embedded by a real signature; the debug build is ad-hoc signed.
-- **docs/release.md** gathered its manual checks before 009 and 020–024 were finished; re-gather them from the issue files. Its README note that the backend is not wired is also out of date.
 
 ## Weak spots by area
 
@@ -60,9 +66,8 @@ What that report does not tell us, because the details were not recorded: whethe
 
 ### UI
 
-- Every Delete in Settings is locked during any recording, because the app does not tell the UI which model is in use.
 - A download row disappears if the window reloads mid-download, until the next progress event.
-- "Mic only" (system audio denied) is not shown in the UI; it goes to the log.
+- The mic-only warning (issue 028) shows on the live meeting only, not on Home or Settings during a meeting.
 - Quitting after the first-run download but before Finish skips the permissions step next time.
 - Focus is not moved when the first-run step changes; no screen reader was used anywhere.
 - Shortcut keys show US-layout labels.
@@ -78,8 +83,8 @@ What that report does not tell us, because the details were not recorded: whethe
 ### Menu bar, shortcut, permissions (022–024)
 
 - None of the three has been seen or triggered: no tray icon on screen, no key press, no permission prompt.
-- Open Mneme does not jump to the live meeting.
-- While a meeting is still loading its model, the menu still offers Start; choosing it is refused.
+- Clicking the Dock icon shows the window but does not go to the live meeting; the menu's Open Mneme does (028).
+- While a start from the menu bar or shortcut loads its model, the window's New meeting is still enabled and is refused if pressed.
 - A model deleted in Settings is noticed by the menu only on the next hover or click.
 - macOS may not refuse a shortcut that is already in use, so a reserved combination may show no error. A saved shortcut that fails to register at launch is only logged.
 - System audio reads "undetermined" until a recording settles it. A prompt refused at first run stays "undetermined" until a meeting is refused; if macOS does not block the start while its prompt is open, the first meeting may read "denied" early.

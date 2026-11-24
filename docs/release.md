@@ -52,7 +52,7 @@ Or, without the overlay, set the identity in the environment:
 APPLE_SIGNING_IDENTITY="Mneme Dev Signing" pnpm tauri build --debug
 ```
 
-The two differ in one way. The overlay also turns the hardened runtime off, so the build can use the microphone without an entitlements file. With only the environment variable, the hardened runtime stays on (Tauri's default) and the microphone works only once the entitlements file from issue 024 is in the config.
+The two differ in one way. The overlay also turns the hardened runtime off, so the build does not depend on the entitlements file. With only the environment variable, the hardened runtime stays on (Tauri's default) and the microphone relies on the audio-input entitlement in `src-tauri/Entitlements.plist`, which the config names. That entitlement has not yet been embedded by a real signature, so this path is untested.
 
 The first signing shows a keychain prompt for the new key; choose **Always Allow**. The first signed build asks for microphone and system-audio permission once, because its identity is new. Later rebuilds signed the same way do not ask again.
 
@@ -85,7 +85,7 @@ codesign -d -r- target/debug/bundle/macos/Mneme.app            # requirement nam
 
    It asks for an app-specific password (made at account.apple.com) and saves it in the keychain. An App Store Connect API key works too: pass `--key`, `--key-id` and `--issuer` to the same command, or give the key to the script directly (below). Keep the `.p8` file outside the repository.
 
-4. The entitlements file and `Info.plist` usage strings from issue 024, referenced from the Tauri config. The script refuses to run without an entitlements file, because a hardened-runtime app without the audio-input entitlement cannot record.
+4. The entitlements file and `Info.plist` usage strings. Issue 024 added both (`src-tauri/Entitlements.plist`, `src-tauri/Info.plist`), and the Tauri config names the entitlements file. The script still checks for it and refuses to run without it, because a hardened-runtime app without the audio-input entitlement cannot record.
 
 ### Run it
 
@@ -169,9 +169,7 @@ Optional, with the network on: while a meeting records, `lsof -nP -i -a -p "$(pg
 
 ## Manual test list
 
-Gathered on 2026-11-12 from the "Manual checks" section of every issue file, in the wording used there. Boxes are unticked here on purpose: this is the list to walk through for a release. Where the issue file already records a check as done, that is noted.
-
-**Not finished when this list was written:** 009 (live session, todo), 020 (first run, todo), 021 (Tauri commands, todo), 022 (menu bar icon, todo), 023 (global shortcut, todo), 024 (permissions flow, todo). 008 (benchmark CLI) was paused. Their checks below are copied from the issue files as they stood and may change when those issues are implemented; re-read the issue files before a release. Until 021 is done the built app has no working backend, so every check that says "in the built app" cannot be run yet.
+Gathered again on 2026-11-24 from the "Manual checks" section of every issue file, in the wording used there. Every issue is done except 008, which is paused. Boxes are unticked here on purpose: this is the list to walk through for a release. Where a check has been done, or partly done, that is noted. [known-gaps.md](known-gaps.md) has the short list of what is still open.
 
 Issues with no manual checks: 001, 005, 006, 007, 010 to 020, 026.
 
@@ -196,40 +194,52 @@ Issues with no manual checks: 001, 005, 006, 007, 010 to 020, 026.
 
 ### Transcription
 
-008 Benchmark CLI (paused)
+008 Benchmark CLI (paused, on hold by choice since 2026-11-24; not needed for a release)
 
 - [ ] Run `mneme-bench` on a real meeting recording (from `mneme-record`) for each model size I care about, and confirm the table and the recommendation.
 
 ### Live pipeline
 
-009 Live session (todo)
+009 Live session
 
 - [ ] A 30 minute real call gives a full, ordered transcript at stop, with Me and Them correct (with headphones).
 
 ### The app
 
-021 Tauri commands (todo)
+021 Tauri commands
 
-- [ ] In the built app: first run downloads a model; New meeting records; notes save; Stop gives a transcript; the meeting appears on Home; relaunch keeps everything.
+- [ ] In the built app: first run downloads a model; New meeting records; notes save; Stop gives a transcript; the meeting appears on Home; relaunch keeps everything. (Partly seen on 2026-11-18: first run finished, a meeting recorded, stopped and was saved. Not recorded: whether it was the built app or `pnpm tauri dev`, and whether relaunch was checked.)
 - [ ] Force-quit mid-meeting, relaunch: the meeting is listed as interrupted with its transcript.
 
-022 Menu bar icon (todo)
+022 Menu bar icon
 
 - [ ] Icon changes on start and stop from the window, the menu, and after a crash recovery launch.
 - [ ] Timer ticks in the menu bar; readable in light and dark menu bars.
 - [ ] Start from the menu bar with the window closed records, and Open Mneme shows the live meeting.
 
-023 Global shortcut (todo)
+023 Global shortcut
 
 - [ ] Set a shortcut in Settings; from another app it starts and stops recording.
 - [ ] Clear it; the combination no longer does anything.
 - [ ] Pick a combination macOS reserves; the error shows and the old one still works.
 
-024 Permissions flow (todo)
+024 Permissions flow
 
 - [ ] On a fresh user account (or after resetting permissions with `tccutil reset` for the bundle id): first run prompts for each permission once, with the right text.
 - [ ] Deny the mic, then follow the app's instructions to fix it.
-- [ ] Deny system audio: a meeting records only Me lines and says why.
+- [ ] Deny system audio: a meeting records only Me lines and says why. (Since 028 the warning shows above the notes of the live meeting.)
+
+027 Recording errors from outside the window
+
+- [ ] In the app: turn off Mneme's microphone access in System Settings, choose Start Recording from the menu bar icon. The window opens and says the microphone is not allowed. Turn access back on afterwards.
+
+028 Spellcheck setting and recording fixes
+
+- [ ] In the app: turn spellcheck on in Settings, open a meeting, type a misspelled word: it is underlined. Turn it off: the underline goes.
+- [ ] Turn off System Audio Recording for Mneme, start a meeting: the warning shows above the notes. Turn it back on afterwards.
+- [ ] Start a meeting, go to Settings, choose Open Mneme from the menu bar: the window shows the live meeting.
+- [ ] During a recording, Settings: only the model in use has Delete dimmed.
+- [ ] Start a meeting from the window and open the menu bar menu while the model loads: it reads "Starting…" and cannot be clicked.
 
 ### Signing and release
 

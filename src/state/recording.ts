@@ -47,6 +47,8 @@ export const IDLE_RECORDING: RecordingState = {
   status: "idle",
   meetingId: null,
   elapsedSecs: 0,
+  modelId: null,
+  warning: null,
 };
 
 export const RecordingContext = createContext<Recording | null>(null);

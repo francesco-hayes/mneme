@@ -448,6 +448,30 @@ describe("the title", () => {
 });
 
 describe("while recording", () => {
+  test("says when the meeting records the microphone only, until it stops", async () => {
+    mockApi.mock.reset({ permissions: { systemAudio: "denied" } });
+    await startMeeting();
+    expect(
+      screen.getByText(/records the microphone only/).closest("[role=status]"),
+    ).toBeVisible();
+
+    await click("Stop");
+    await advance(600);
+    expect(screen.queryByText(/records the microphone only/)).toBeNull();
+  });
+
+  test("no warning when both channels are recorded", async () => {
+    await startMeeting();
+    expect(screen.queryByText(/microphone only/)).toBeNull();
+  });
+
+  test("notes are spellchecked when the setting is on", async () => {
+    mockApi.mock.reset({ settings: { spellcheck: true } });
+    seedMeeting();
+    await openMeeting();
+    expect(notesEditor().contentDOM).toHaveAttribute("spellcheck", "true");
+  });
+
   test("a new meeting opens with the cursor in the editor", async () => {
     await startMeeting();
 

@@ -34,6 +34,15 @@ const notesLanguage = new Language(
   "markdown",
 );
 
+/**
+ * Spellcheck on or off. CodeMirror turns the browser's spellcheck off by
+ * default; on, misspelled words are underlined. Autocorrect and
+ * autocapitalize stay off either way, so nothing rewrites what was typed.
+ */
+export function spellcheckAttributes(on: boolean): Extension {
+  return on ? EditorView.contentAttributes.of({ spellcheck: "true" }) : [];
+}
+
 export interface NotesExtensionsOptions {
   /** The text the editor opens with; its line endings are kept (see lineBreaks.ts). */
   text: string;

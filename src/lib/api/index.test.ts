@@ -47,7 +47,7 @@ async function loadTauriApi(): Promise<Api> {
 test("every method of the Tauri implementation calls its backend command", async () => {
   const tauriApi = await loadTauriApi();
   const methods = Object.keys(tauriApi) as (keyof Api)[];
-  expect(methods).toHaveLength(20);
+  expect(methods).toHaveLength(21);
 
   invoke.mockResolvedValue("result");
   const calls: [Promise<unknown>, string, Record<string, unknown>?][] = [
@@ -81,8 +81,8 @@ test("every method of the Tauri implementation calls its backend command", async
       { kind: "systemAudio" },
     ],
   ];
-  // The three subscriptions are the only methods that are not commands.
-  expect(calls).toHaveLength(methods.length - 3);
+  // The four subscriptions are the only methods that are not commands.
+  expect(calls).toHaveLength(methods.length - 4);
   for (const [result, command, args] of calls) {
     await expect(result, command).resolves.toBe("result");
     expect(invoke, command).toHaveBeenCalledWith(command, args);

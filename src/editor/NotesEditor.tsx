@@ -1,8 +1,8 @@
-import { EditorState } from "@codemirror/state";
+import { Compartment, EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { type Ref, useEffect, useImperativeHandle, useRef } from "react";
 import { cx } from "../lib/cx";
-import { notesExtensions } from "./extensions";
+import { notesExtensions, spellcheckAttributes } from "./extensions";
 import styles from "./NotesEditor.module.css";
 
 export interface NotesEditorProps {
@@ -24,6 +24,8 @@ export interface NotesEditorProps {
   label: string;
   /** Shown, dimmed, while there is no text. */
   placeholder?: string;
+  /** Marks misspelled words. Can change while the editor is open. Default off. */
+  spellcheck?: boolean;
   className?: string;
   /** Gives the parent a way to put the cursor in the editor. */
   ref?: Ref<NotesEditorHandle>;
@@ -58,11 +60,13 @@ export function NotesEditor({
   autoFocus = false,
   label,
   placeholder,
+  spellcheck = false,
   className,
   ref,
 }: NotesEditorProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
+  const spellcheckSlot = useRef(new Compartment());
   useImperativeHandle(
     ref,
     () => ({ focus: () => viewRef.current?.focus() }),
@@ -74,12 +78,19 @@ export function NotesEditor({
   useEffect(() => {
     handlers.current = { onChange, onBlur };
   });
-  const initial = useRef({ initialText, autoFocus, label, placeholder });
+  const initial = useRef({
+    initialText,
+    autoFocus,
+    label,
+    placeholder,
+    spellcheck,
+  });
 
   useEffect(() => {
     const host = hostRef.current;
     if (host === null) return;
     const { initialText, autoFocus, label, placeholder } = initial.current;
+    const spellcheckOn = initial.current.spellcheck;
     // An element can have only one shadow root, and React's development mode
     // runs this effect twice.
     const root = host.shadowRoot ?? host.attachShadow({ mode: "open" });
@@ -91,6 +102,7 @@ export function NotesEditor({
         doc: initialText,
         extensions: [
           notesExtensions({ text: initialText, label, placeholder }),
+          spellcheckSlot.current.of(spellcheckAttributes(spellcheckOn)),
           EditorView.updateListener.of((update) => {
             if (update.docChanged) {
               // `sliceDoc` joins the lines with the document's own line break.
@@ -118,6 +130,16 @@ export function NotesEditor({
       view.destroy();
     };
   }, []);
+
+  // The setting can change while the editor is open: follow it without
+  // starting a new editor.
+  useEffect(() => {
+    viewRef.current?.dispatch({
+      effects: spellcheckSlot.current.reconfigure(
+        spellcheckAttributes(spellcheck),
+      ),
+    });
+  }, [spellcheck]);
 
   return (
     // The attribute is how tests find the element that holds the shadow root.

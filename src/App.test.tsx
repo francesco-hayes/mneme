@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, test } from "vitest";
 import App from "./App";
@@ -100,6 +100,26 @@ describe("navigation", () => {
     await user.click(screen.getByRole("button", { name: "Back" }));
     expect(await heading("Meetings")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Back" })).toBeNull();
+  });
+
+  test("Open Mneme in the menu bar during a recording goes to the live meeting", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "Settings" }));
+    await heading("Settings");
+    const meeting = await act(() => mockApi.startMeeting());
+
+    act(() => mockApi.mock.emitOpenMeeting());
+    const title = await screen.findByRole<HTMLInputElement>("textbox", {
+      name: "Meeting title",
+    });
+    expect(title.value).toBe(meeting.title);
+
+    // Asked again while it is on screen: nothing piles up behind it.
+    act(() => mockApi.mock.emitOpenMeeting());
+    await user.click(screen.getByRole("button", { name: "Back" }));
+    expect(await heading("Settings")).toBeInTheDocument();
+    await act(() => mockApi.stopMeeting());
   });
 
   test("a meeting that cannot be opened shows the error in place", async () => {

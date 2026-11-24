@@ -31,8 +31,8 @@ export interface ModelPickerProps {
   defaultId: string | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** A recording is running: nothing can be deleted. */
-  locked: boolean;
+  /** The model the current recording uses, or null. It cannot be deleted. */
+  inUseId: string | null;
   /** An installed model was picked as the default. */
   onChoose: (id: string) => void;
 }
@@ -57,7 +57,7 @@ export function ModelPicker({
   defaultId,
   open,
   onOpenChange,
-  locked,
+  inUseId,
   onChoose,
 }: ModelPickerProps) {
   const { models, downloads } = useModelLibrary();
@@ -73,6 +73,7 @@ export function ModelPicker({
 
   const installed = models.filter((model) => model.installed);
   const available = models.filter((model) => !model.installed);
+  const inUseModel = installed.find((model) => model.id === inUseId);
   const current = installed.find((model) => model.id === defaultId);
   const triggerText =
     current?.name ??
@@ -230,7 +231,7 @@ export function ModelPicker({
                       models={models}
                       isDefault={model.id === defaultId}
                       defaultId={defaultId}
-                      locked={locked}
+                      locked={model.id === inUseId}
                       onChoose={() => {
                         onChoose(model.id);
                         close(true);
@@ -258,9 +259,9 @@ export function ModelPicker({
               </ul>
             </>
           )}
-          {locked && installed.length > 0 && (
+          {inUseModel !== undefined && (
             <p className={styles.caption}>
-              Models cannot be deleted while a recording is running.
+              {`${inUseModel.name} is in use by the recording and cannot be deleted until it stops.`}
             </p>
           )}
         </div>
@@ -274,6 +275,7 @@ interface InstalledRowProps {
   models: readonly ModelInfo[];
   isDefault: boolean;
   defaultId: string | null;
+  /** The recording uses this model: it cannot be deleted. */
   locked: boolean;
   onChoose: () => void;
 }
@@ -293,7 +295,8 @@ function InstalledRow({
   const [error, setError] = useState<string | null>(null);
   const deleteButton = useRef<HTMLButtonElement>(null);
   const keepButton = useRef<HTMLButtonElement>(null);
-  // A recording that starts while the question is open withdraws it.
+  // A recording that starts with this model while the question is open
+  // withdraws it.
   const confirming = asked && !locked;
 
   // The question opens with the focus on the safe answer, and answering no

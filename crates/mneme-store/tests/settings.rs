@@ -41,6 +41,7 @@ fn defaults() -> Settings {
         language: "en".to_owned(),
         global_shortcut: None,
         meetings_root: PathBuf::from(DEFAULT_ROOT),
+        spellcheck: false,
     }
 }
 
@@ -117,6 +118,7 @@ fn a_patch_that_changes_nothing_writes_nothing() {
             language: set("  "),
             global_shortcut: set(""),
             meetings_root: Patch::Clear,
+            spellcheck: Patch::Keep,
         })
         .unwrap();
 
@@ -149,6 +151,7 @@ fn the_file_uses_the_names_of_the_frontend_contract() {
             language: set("en"),
             global_shortcut: set("CmdOrCtrl+Shift+M"),
             meetings_root: Patch::Set(PathBuf::from("/Users/ana/Notes/Meetings")),
+            spellcheck: Patch::Set(true),
         })
         .unwrap();
 
@@ -157,6 +160,7 @@ fn the_file_uses_the_names_of_the_frontend_contract() {
         "language": "en",
         "globalShortcut": "CmdOrCtrl+Shift+M",
         "meetingsRoot": "/Users/ana/Notes/Meetings",
+        "spellcheck": true,
     });
     assert_eq!(json_of(&path), expected);
     // What a Tauri command returns to the frontend has the same names.
@@ -168,6 +172,7 @@ fn the_file_uses_the_names_of_the_frontend_contract() {
             "language": "en",
             "globalShortcut": null,
             "meetingsRoot": DEFAULT_ROOT,
+            "spellcheck": false,
         })
     );
 
@@ -178,7 +183,7 @@ fn the_file_uses_the_names_of_the_frontend_contract() {
         text,
         serde_json::to_string_pretty(&json_of(&path)).unwrap() + "\n"
     );
-    assert_eq!(text.lines().count(), 6, "{text}");
+    assert_eq!(text.lines().count(), 7, "{text}");
     assert!(text.contains("\n  \"language\": \"en\""), "{text}");
     assert_eq!(names_in(dir.path()), [SETTINGS_FILE]);
 }
@@ -283,6 +288,7 @@ fn keep_clear_and_set_are_three_different_things() {
         language: set("fr"),
         global_shortcut: set("Alt+Space"),
         meetings_root: Patch::Set(PathBuf::from("/Volumes/Work/Meetings")),
+        spellcheck: Patch::Keep,
     };
     let after_all_set = store.update(&all_set).unwrap();
     assert_eq!(after_all_set.global_shortcut.as_deref(), Some("Alt+Space"));
@@ -390,6 +396,7 @@ fn a_patch_from_the_frontend_tells_null_from_absent() {
             language: set("en"),
             global_shortcut: set("F5"),
             meetings_root: Patch::Set(PathBuf::from("/Volumes/Work")),
+            spellcheck: Patch::Keep,
         }
     );
     assert_eq!(
@@ -399,6 +406,7 @@ fn a_patch_from_the_frontend_tells_null_from_absent() {
             language: Patch::Clear,
             global_shortcut: Patch::Keep,
             meetings_root: Patch::Clear,
+            spellcheck: Patch::Keep,
         }
     );
 
@@ -521,6 +529,7 @@ fn values_survive_a_reopen() {
             language: set("it"),
             global_shortcut: set("CmdOrCtrl+Shift+M"),
             meetings_root: Patch::Set(PathBuf::from("/Volumes/Work/Réunions")),
+            spellcheck: Patch::Keep,
         })
         .unwrap();
 
@@ -534,6 +543,7 @@ fn values_survive_a_reopen() {
             language: "it".to_owned(),
             global_shortcut: Some("CmdOrCtrl+Shift+M".to_owned()),
             meetings_root: PathBuf::from("/Volumes/Work/Réunions"),
+            spellcheck: false,
         }
     );
 
@@ -792,6 +802,7 @@ fn one_bad_value_costs_only_that_setting_and_stays_in_the_file() {
             language: "en".to_owned(),
             global_shortcut: Some("Alt+Space".to_owned()),
             meetings_root: PathBuf::from("/Volumes/Work/Meetings"),
+            spellcheck: false,
         }
     );
     match warnings.as_slice() {
@@ -857,6 +868,7 @@ fn every_known_key_of_the_wrong_type_is_reported() {
             "language": {"code": "en"},
             "globalShortcut": true,
             "meetingsRoot": 7,
+            "spellcheck": "yes",
             "theme": "dark",
         }),
     );
@@ -877,6 +889,7 @@ fn every_known_key_of_the_wrong_type_is_reported() {
         ("globalShortcut", "is a boolean, not text"),
         ("language", "is an object, not text"),
         ("meetingsRoot", "is a number, not text"),
+        ("spellcheck", "is text, not a boolean"),
     ]
     .map(|(key, reason)| (key.to_owned(), reason.to_owned()));
     assert_eq!(reported, expected);
@@ -894,9 +907,47 @@ fn every_known_key_of_the_wrong_type_is_reported() {
             "defaultModelId": ["small"],
             "globalShortcut": true,
             "meetingsRoot": 7,
+            "spellcheck": "yes",
             "theme": "dark",
         })
     );
+}
+
+#[test]
+fn spellcheck_is_off_until_set_and_is_stored_as_a_boolean() {
+    let (_dir, path) = data_dir();
+    let store = open_clean(&path);
+    assert!(!store.get().spellcheck);
+
+    let on = store
+        .update(&SettingsPatch {
+            spellcheck: Patch::Set(true),
+            ..SettingsPatch::default()
+        })
+        .unwrap();
+    assert!(on.spellcheck);
+    assert_eq!(json_of(&path), json!({ "spellcheck": true }));
+    assert!(open_clean(&path).get().spellcheck);
+
+    // Off is written as `false`, and clearing removes the key: both are off.
+    store
+        .update(&SettingsPatch {
+            spellcheck: Patch::Set(false),
+            ..SettingsPatch::default()
+        })
+        .unwrap();
+    assert_eq!(json_of(&path), json!({ "spellcheck": false }));
+    let cleared = store
+        .update(&SettingsPatch {
+            spellcheck: Patch::Clear,
+            ..SettingsPatch::default()
+        })
+        .unwrap();
+    assert_eq!(cleared, defaults());
+
+    // As the frontend sends it.
+    let sent: SettingsPatch = serde_json::from_str(r#"{"spellcheck": true}"#).unwrap();
+    assert_eq!(sent.spellcheck, Patch::Set(true));
 }
 
 // The meetings root
@@ -1314,6 +1365,7 @@ fn updates_from_several_threads_are_all_kept() {
         language: format!("1-{last}"),
         global_shortcut: Some(format!("2-{last}")),
         meetings_root: PathBuf::from(format!("/roots/3-{last}")),
+        spellcheck: false,
     };
     assert_eq!(store.get(), expected);
     assert_eq!(open_clean(&path).get(), expected);

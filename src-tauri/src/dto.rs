@@ -137,6 +137,12 @@ pub struct RecordingState {
     pub status: &'static str,
     pub meeting_id: Option<String>,
     pub elapsed_secs: u64,
+    /// The model the meeting is transcribed with, while recording or
+    /// stopping. That model cannot be deleted.
+    pub model_id: Option<String>,
+    /// Why a channel is not being recorded (system audio refused, a device
+    /// that failed), or `None`. Kept for the rest of the meeting.
+    pub warning: Option<String>,
 }
 
 impl RecordingState {
@@ -145,6 +151,8 @@ impl RecordingState {
             status: "idle",
             meeting_id: None,
             elapsed_secs: 0,
+            model_id: None,
+            warning: None,
         }
     }
 }
@@ -185,7 +193,10 @@ mod tests {
         );
         assert_eq!(
             serde_json::to_value(RecordingState::idle()).unwrap(),
-            json!({ "status": "idle", "meetingId": null, "elapsedSecs": 0 })
+            json!({
+                "status": "idle", "meetingId": null, "elapsedSecs": 0,
+                "modelId": null, "warning": null
+            })
         );
         let progress = DownloadProgress {
             model_id: "base".into(),

@@ -9,8 +9,7 @@ export type * from "./types";
 
 /**
  * Tauri inside the app, the mock everywhere else (browser dev server, tests).
- * `VITE_MNEME_API=mock` or `=tauri` overrides the choice at build time;
- * `pnpm tauri dev` sets it to `mock` until issue 021 implements the backend.
+ * `VITE_MNEME_API=mock` or `=tauri` overrides the choice at build time.
  */
 export function chooseApi(
   override: string | undefined,

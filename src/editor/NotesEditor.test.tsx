@@ -145,3 +145,24 @@ test("the editor is removed when the component goes away", () => {
   unmount();
   expect(root.querySelector(".cm-editor")).toBeNull();
 });
+
+test("spellcheck is off unless asked for, and follows the prop while open", () => {
+  const props = {
+    initialText: "teh notes",
+    onChange: () => {},
+    label: "Notes",
+  };
+  const view = render(<NotesEditor {...props} />);
+  const content = () => notesEditor().contentDOM;
+  expect(content()).toHaveAttribute("spellcheck", "false");
+
+  view.rerender(<NotesEditor {...props} spellcheck />);
+  expect(content()).toHaveAttribute("spellcheck", "true");
+  // Nothing rewrites what was typed, either way.
+  expect(content()).toHaveAttribute("autocorrect", "off");
+  expect(content()).toHaveAttribute("autocapitalize", "off");
+
+  view.rerender(<NotesEditor {...props} spellcheck={false} />);
+  expect(content()).toHaveAttribute("spellcheck", "false");
+  expect(notesText()).toBe("teh notes");
+});

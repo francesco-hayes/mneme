@@ -23,7 +23,7 @@ export interface ModelsSectionProps {
  */
 export function ModelsSection({ defaultModel }: ModelsSectionProps) {
   const library = useModelLibrary();
-  const { isActive: recordingActive } = useRecording();
+  const { state: recording } = useRecording();
   const [open, setOpen] = useState(false);
   const labelId = useId();
 
@@ -81,7 +81,7 @@ export function ModelsSection({ defaultModel }: ModelsSectionProps) {
             defaultId={defaultModel.value}
             open={open}
             onOpenChange={setOpen}
-            locked={recordingActive}
+            inUseId={recording.modelId}
             onChoose={(id) => {
               if (id !== defaultModel.value) void defaultModel.save(id);
             }}

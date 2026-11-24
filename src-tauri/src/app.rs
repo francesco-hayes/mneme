@@ -81,6 +81,9 @@ pub trait Host: Send + Sync + 'static {
     fn reveal(&self, path: &Path) -> Result<()>;
     /// Opens the pane of System Settings where the permission is changed.
     fn open_privacy_settings(&self, kind: PermissionKind) -> Result<()>;
+    /// A start began loading its model. The window is not told (the state
+    /// stays idle until the meeting exists), but the menu bar redraws.
+    fn starting(&self) {}
 }
 
 /// A meeting that is being recorded or stopped.
@@ -94,6 +97,37 @@ struct Live {
     /// System audio was already known to be refused when the meeting
     /// started, and the log has said so.
     mic_only: bool,
+    /// What the window is told about a channel that is not being recorded.
+    /// Set at the start when the meeting is mic only, and by the watcher
+    /// when a source fails. The first reason stays.
+    warning: Arc<Mutex<Option<String>>>,
+    /// The warning the start gave, if any. The system source is still
+    /// tried, so it is taken back if that source delivers audio after all.
+    start_warning: Option<String>,
+}
+
+impl Live {
+    fn warning(&self) -> Option<String> {
+        self.warning
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    fn warn(&self, why: String) {
+        self.warning
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get_or_insert(why);
+    }
+
+    /// Takes back the start's warning: system audio is being recorded.
+    fn withdraw_start_warning(&self) {
+        let mut warning = self.warning.lock().unwrap_or_else(PoisonError::into_inner);
+        if self.start_warning.is_some() && *warning == self.start_warning {
+            *warning = None;
+        }
+    }
 }
 
 /// One recording at a time: the whole state of it.
@@ -140,6 +174,8 @@ impl Recording {
             status,
             meeting_id: Some(live.meeting_id.as_str().to_owned()),
             elapsed_secs: live.session.elapsed().as_secs(),
+            model_id: Some(live.model_id.clone()),
+            warning: live.warning(),
         }
     }
 }
@@ -312,6 +348,12 @@ impl AppCore {
         self.recording().state()
     }
 
+    /// A start is loading its model: the state still says idle, but a
+    /// second start would be refused.
+    pub fn is_starting(&self) -> bool {
+        matches!(*self.recording(), Recording::Starting { .. })
+    }
+
     /// Starts recording a new meeting and returns it. Blocks while the model
     /// loads (seconds), so call it off the UI thread.
     ///
@@ -334,6 +376,8 @@ impl AppCore {
             };
             model
         };
+        self.changed.notify_all();
+        self.host.starting();
 
         match self.start_session(&model_id, &model_path) {
             Ok((live, engine)) => {
@@ -380,13 +424,13 @@ impl AppCore {
             PermissionStatus::NotDetermined => self.host.request_microphone_permission(),
             status => status,
         };
-        let mic_only = match permissions::start_decision(microphone, self.system_audio_permission())
+        let warning = match permissions::start_decision(microphone, self.system_audio_permission())
         {
-            StartDecision::Record => false,
-            // The contract has no field for this, so it goes to the log.
+            StartDecision::Record => None,
+            // Logged, and said in the window for as long as the meeting runs.
             StartDecision::MicOnly(why) => {
-                log(why);
-                true
+                log(&why);
+                Some(why)
             }
             StartDecision::Refuse(why) => return Err(why),
         };
@@ -422,7 +466,9 @@ impl AppCore {
                     model_id: model_id.to_owned(),
                     session: Arc::new(session),
                     store,
-                    mic_only,
+                    mic_only: warning.is_some(),
+                    warning: Arc::new(Mutex::new(warning.clone())),
+                    start_warning: warning,
                 },
                 engine,
             )),
@@ -447,7 +493,7 @@ impl AppCore {
         let mut lost: Vec<Speaker> = Vec::new();
         let mut next_tick = Instant::now() + self.tick;
         loop {
-            let session = {
+            let live = {
                 let mut recording = self.recording();
                 // Wait out the tick. Any change of state ends the watch; a
                 // wake-up for no reason goes back to waiting.
@@ -472,20 +518,27 @@ impl AppCore {
                         if live.mic_only && !lost.contains(&Speaker::Them) {
                             lost.push(Speaker::Them);
                         }
-                        Arc::clone(&live.session)
+                        live.clone()
                     }
                     _ => return,
                 }
             };
+            let session = Arc::clone(&live.session);
             let status = session.status();
             self.learn_system_audio(&status.sources);
+            let them_heard = status.sources.iter().any(|source| {
+                source.speaker == Speaker::Them && source.frames > 0 && !source.phase.is_failure()
+            });
+            if them_heard {
+                live.withdraw_start_warning();
+            }
             for source in &status.sources {
                 if source.phase.is_failure() && !lost.contains(&source.speaker) {
                     lost.push(source.speaker);
-                    log(format_args!(
-                        "{meeting_id}: {}",
-                        permissions::channel_lost(source.speaker, source.phase, &source.errors)
-                    ));
+                    let why =
+                        permissions::channel_lost(source.speaker, source.phase, &source.errors);
+                    log(format_args!("{meeting_id}: {why}"));
+                    live.warn(why);
                 }
             }
             // Capture is over without a stop: nothing is being recorded any

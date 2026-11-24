@@ -1,5 +1,11 @@
 import { useCallback, useId, useRef, useState } from "react";
-import { Button, InlineError, Screen, TranscriptIcon } from "../components";
+import {
+  Button,
+  InlineError,
+  Screen,
+  TranscriptIcon,
+  WarningIcon,
+} from "../components";
 import type { NotesEditorHandle } from "../editor/NotesEditor";
 import { api, type Meeting } from "../lib/api";
 import { cx } from "../lib/cx";
@@ -63,6 +69,11 @@ function MeetingView({ opened }: { opened: Meeting }) {
   const meetingId = opened.id;
   const { phase, isLive, meeting, lineCount } = useMeetingPhase(opened);
   const transcript = useTranscript(meetingId);
+  const { state: recording } = useRecording();
+  // A channel that is not being recorded (system audio refused, say): said
+  // for as long as this meeting records.
+  const channelWarning =
+    isLive && recording.meetingId === meetingId ? recording.warning : null;
 
   // Closed whenever a meeting is opened, and nothing but the user opens it.
   const [paneOpen, setPaneOpen] = useState(false);
@@ -164,6 +175,12 @@ function MeetingView({ opened }: { opened: Meeting }) {
               className={notices.notice}
               message={`Could not show the meeting in Finder: ${finderError}`}
             />
+          )}
+          {channelWarning !== null && (
+            <div role="status" className={cx(notices.notice, notices.warning)}>
+              <WarningIcon />
+              <span className="selectable">{channelWarning}</span>
+            </div>
           )}
           {isAfter && meeting.status === "interrupted" && (
             <p role="note" className={cx(notices.notice, notices.quiet)}>

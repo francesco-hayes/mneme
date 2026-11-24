@@ -420,16 +420,55 @@ fn a_second_start_is_refused_while_the_model_is_still_loading() {
 
     // Loading is not yet recording, but the slot is taken.
     assert_eq!(f.core.recording_state(), dto::RecordingState::idle());
+    assert!(f.core.is_starting());
     assert_eq!(f.core.start_meeting().unwrap_err(), ALREADY_RECORDING);
     assert!(f.core.delete_model("small").is_err());
     assert_eq!(f.core.stop_meeting().unwrap_err(), NOT_RECORDING);
 
     open_gate.send(()).unwrap();
     let meeting = first.join().unwrap().unwrap();
-    assert_eq!(
-        f.core.recording_state().meeting_id,
-        Some(meeting.summary.id)
+    assert!(!f.core.is_starting());
+    let state = f.core.recording_state();
+    assert_eq!(state.meeting_id, Some(meeting.summary.id));
+    assert_eq!(state.model_id.as_deref(), Some("small"));
+    assert_eq!(state.warning, None);
+    f.core.stop_meeting().unwrap();
+    assert!(!f.core.is_starting());
+}
+
+#[test]
+fn the_state_says_why_system_audio_is_missing_until_it_is_heard() {
+    let f = Fixture::new(&["small"], Duration::from_millis(50), |host| {
+        host.system_audio_refused = AtomicBool::new(true);
+    });
+
+    // Not known to be refused at the start: the watcher finds out.
+    f.core.start_meeting().unwrap();
+    f.wait_for("the warning", || f.core.recording_state().warning.is_some());
+    let warning = f.core.recording_state().warning.unwrap();
+    assert!(
+        warning.starts_with("System audio is not being recorded"),
+        "{warning}"
     );
+    f.core.stop_meeting().unwrap();
+    assert_eq!(f.core.recording_state(), dto::RecordingState::idle());
+
+    // Known to be refused now: the next meeting says so from the start.
+    f.core.start_meeting().unwrap();
+    let warning = f.core.recording_state().warning.unwrap();
+    assert!(
+        warning.starts_with("System audio access is denied"),
+        "{warning}"
+    );
+    f.core.stop_meeting().unwrap();
+
+    // Access given meanwhile: the warning is taken back once audio arrives.
+    f.host.system_audio_refused.store(false, Ordering::SeqCst);
+    f.core.start_meeting().unwrap();
+    assert!(f.core.recording_state().warning.is_some());
+    f.wait_for("the warning to go", || {
+        f.core.recording_state().warning.is_none()
+    });
     f.core.stop_meeting().unwrap();
 }
 

@@ -22,6 +22,9 @@ use crate::dto;
 /// Event carrying a [`RecordingError`]: a start or stop asked for outside
 /// the window (menu bar, shortcut) failed. The window is shown first.
 pub const RECORDING_ERROR_EVENT: &str = "recording-error";
+/// Event carrying a meeting id: Open Mneme was chosen while that meeting is
+/// recording, so the window goes to it.
+pub const OPEN_MEETING_EVENT: &str = "open-meeting";
 
 /// Label of the main window in `tauri.conf.json`.
 pub const MAIN_WINDOW: &str = "main";
@@ -39,19 +42,26 @@ const RECORDING_ICON: Image<'static> = include_image!("./icons/tray-recording.pn
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Phase {
     Idle,
+    /// A start is loading its model. The window's state still says idle.
+    Starting,
     Recording,
     Stopping,
 }
 
 impl Phase {
-    /// From the state the window gets. A status this code does not know
-    /// counts as idle.
-    pub fn of(state: &dto::RecordingState) -> Self {
+    /// From the state the window gets, and whether a start is loading its
+    /// model. A status this code does not know counts as idle.
+    pub fn of(state: &dto::RecordingState, starting: bool) -> Self {
         match state.status {
             "recording" => Self::Recording,
             "stopping" => Self::Stopping,
+            _ if starting => Self::Starting,
             _ => Self::Idle,
         }
+    }
+
+    fn of_core(core: &AppCore) -> Self {
+        Self::of(&core.recording_state(), core.is_starting())
     }
 }
 
@@ -71,12 +81,13 @@ impl Toggle {
     }
 }
 
-/// What a toggle does in this phase: nothing while a stop is under way.
+/// What a toggle does in this phase: nothing while a start or a stop is
+/// under way.
 pub const fn toggle_action(phase: Phase) -> Option<Toggle> {
     match phase {
         Phase::Idle => Some(Toggle::Start),
         Phase::Recording => Some(Toggle::Stop),
-        Phase::Stopping => None,
+        Phase::Starting | Phase::Stopping => None,
     }
 }
 
@@ -95,10 +106,11 @@ pub enum IconKind {
     Recording,
 }
 
-/// The recording icon stays until the meeting is closed.
+/// The recording icon shows from the moment the meeting exists until it is
+/// closed.
 pub const fn icon_kind(phase: Phase) -> IconKind {
     match phase {
-        Phase::Idle => IconKind::Idle,
+        Phase::Idle | Phase::Starting => IconKind::Idle,
         Phase::Recording | Phase::Stopping => IconKind::Recording,
     }
 }
@@ -117,6 +129,7 @@ pub const fn menu_model(phase: Phase, model_installed: bool) -> [MenuEntry; 3] {
     let (text, enabled) = match phase {
         Phase::Idle if model_installed => ("Start Recording", true),
         Phase::Idle => ("Start Recording (no model installed)", false),
+        Phase::Starting => ("Starting…", false),
         Phase::Recording => ("Stop Recording", true),
         Phase::Stopping => ("Stopping…", false),
     };
@@ -248,7 +261,7 @@ fn on_menu_event(app: &AppHandle, event: MenuEvent) {
             });
             toggle(app, shown);
         }
-        OPEN_ID => show_main_window(app),
+        OPEN_ID => open_mneme(app),
         // `RunEvent::Exit` stops a running recording before the process ends.
         QUIT_ID => app.exit(0),
         _ => {}
@@ -277,7 +290,7 @@ fn toggle(app: &AppHandle, shown: Option<Phase>) {
     }
     let app = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let current = Phase::of(&core.recording_state());
+        let current = Phase::of_core(&core);
         let action = menu_click_action(shown.unwrap_or(current), current);
         let result = match action {
             Some(Toggle::Start) => core.start_meeting().map(drop),
@@ -304,6 +317,17 @@ fn report_error(app: &AppHandle, action: Toggle, message: String) {
     }
 }
 
+/// Shows the window, on the live meeting if one is recording or stopping.
+fn open_mneme(app: &AppHandle) {
+    show_main_window(app);
+    let live = core(app).and_then(|core| core.recording_state().meeting_id);
+    if let Some(meeting_id) = live
+        && let Err(error) = app.emit(OPEN_MEETING_EVENT, meeting_id)
+    {
+        eprintln!("mneme: sending the meeting to open: {error}");
+    }
+}
+
 /// Shows the main window and gives it the focus.
 pub fn show_main_window(app: &AppHandle) {
     let Some(window) = app.get_webview_window(MAIN_WINDOW) else {
@@ -319,7 +343,7 @@ pub fn show_main_window(app: &AppHandle) {
 /// The recording state changed or ticked: the host calls this with every
 /// state it sends to the window. Never blocks, whatever thread it is on.
 pub fn recording_state_changed(app: &AppHandle, state: &dto::RecordingState) {
-    if Phase::of(state) == Phase::Idle {
+    if Phase::of(state, false) == Phase::Idle {
         // Start is on offer again: look at the models too.
         refresh(app);
     } else {
@@ -346,7 +370,7 @@ pub fn refresh(app: &AppHandle) {
 /// Queues a redraw on the main thread and returns. It must not wait for the
 /// main thread: at quit that thread waits for the recording to stop, and the
 /// stop sends states through here.
-fn redraw(app: &AppHandle) {
+pub fn redraw(app: &AppHandle) {
     let handle = app.clone();
     if let Err(error) = app.run_on_main_thread(move || draw(&handle)) {
         eprintln!("mneme: updating the menu bar icon: {error}");
@@ -359,8 +383,11 @@ fn draw(app: &AppHandle) {
     let Some(tray) = app.try_state::<Tray>() else {
         return;
     };
-    let state = core(app).map_or_else(dto::RecordingState::idle, |core| core.recording_state());
-    let phase = Phase::of(&state);
+    let (state, starting) = core(app).map_or_else(
+        || (dto::RecordingState::idle(), false),
+        |core| (core.recording_state(), core.is_starting()),
+    );
+    let phase = Phase::of(&state, starting);
     let next = Shown {
         phase,
         model_installed: tray.model_installed.load(Ordering::SeqCst),
@@ -405,6 +432,8 @@ mod tests {
             status,
             meeting_id: Some("m1".to_owned()),
             elapsed_secs,
+            model_id: Some("small".to_owned()),
+            warning: None,
         }
     }
 
@@ -414,11 +443,38 @@ mod tests {
 
     #[test]
     fn phase_follows_the_status_the_window_gets() {
-        assert_eq!(Phase::of(&dto::RecordingState::idle()), Phase::Idle);
-        assert_eq!(Phase::of(&state("idle", 0)), Phase::Idle);
-        assert_eq!(Phase::of(&state("recording", 3)), Phase::Recording);
-        assert_eq!(Phase::of(&state("stopping", 3)), Phase::Stopping);
-        assert_eq!(Phase::of(&state("something new", 3)), Phase::Idle);
+        assert_eq!(Phase::of(&dto::RecordingState::idle(), false), Phase::Idle);
+        assert_eq!(Phase::of(&state("idle", 0), false), Phase::Idle);
+        assert_eq!(Phase::of(&state("recording", 3), false), Phase::Recording);
+        assert_eq!(Phase::of(&state("stopping", 3), false), Phase::Stopping);
+        assert_eq!(Phase::of(&state("something new", 3), false), Phase::Idle);
+    }
+
+    #[test]
+    fn an_idle_state_while_a_model_loads_is_starting() {
+        assert_eq!(
+            Phase::of(&dto::RecordingState::idle(), true),
+            Phase::Starting
+        );
+        // The meeting exists once the state says so.
+        assert_eq!(Phase::of(&state("recording", 0), true), Phase::Recording);
+    }
+
+    #[test]
+    fn starting_menu_offers_neither_start_nor_stop() {
+        for model_installed in [true, false] {
+            let entry = toggle_entry(Phase::Starting, model_installed);
+            assert_eq!(entry.text, "Starting…");
+            assert!(!entry.enabled);
+        }
+        assert_eq!(toggle_action(Phase::Starting), None);
+        assert_eq!(icon_kind(Phase::Starting), IconKind::Idle);
+        assert_eq!(title_text(Phase::Starting, 0), None);
+        for current in [Phase::Idle, Phase::Starting, Phase::Recording] {
+            assert_eq!(menu_click_action(Phase::Starting, current), None);
+        }
+        // A Start line drawn before the load began does nothing during it.
+        assert_eq!(menu_click_action(Phase::Idle, Phase::Starting), None);
     }
 
     #[test]
@@ -478,7 +534,12 @@ mod tests {
 
     #[test]
     fn open_and_quit_are_always_there_and_enabled() {
-        for phase in [Phase::Idle, Phase::Recording, Phase::Stopping] {
+        for phase in [
+            Phase::Idle,
+            Phase::Starting,
+            Phase::Recording,
+            Phase::Stopping,
+        ] {
             for model_installed in [true, false] {
                 let [_, open, quit] = menu_model(phase, model_installed);
                 assert_eq!(

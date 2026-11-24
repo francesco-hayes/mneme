@@ -2,7 +2,7 @@
 
 Local-only meeting notes for macOS. Mneme listens to a meeting, transcribes it on your Mac with a Whisper model, and keeps your notes and the transcript as plain Markdown files. Nothing leaves the machine: no accounts, no telemetry, and no network use apart from downloading the model you pick.
 
-Mneme is under construction. The parts exist and are tested on their own: audio capture, the Whisper engine and model downloads, storage, and the UI screens running on a mock API. They are not joined yet. **The app's backend commands are not wired (issue 021)**: `src/lib/api/tauri.ts` is a stub, so a built app opens its window but every call to the backend fails with "not implemented". Use `pnpm dev` or `pnpm tauri dev`, which run the UI on the mock, to see the screens.
+Mneme works end to end: it records a meeting, writes the transcript as it goes, and saves the notes and transcript to the meetings folder. It also has a menu bar icon, a global shortcut, and a first-run flow that asks for permissions. It has had one real use so far, and several checks in the real app are still open. They are listed in [docs/known-gaps.md](docs/known-gaps.md). No signed or notarized release has been made.
 
 - What it will do and why: [mneme-scope.md](mneme-scope.md)
 - Requirements per area: [prds/](prds/README.md)
@@ -24,7 +24,7 @@ The Tauri CLI is a dev dependency, so nothing is installed globally.
 pnpm install
 
 pnpm dev            # UI in the browser at http://localhost:1420, on the mock API
-pnpm tauri dev      # UI in the app window, on the mock API for now (see below)
+pnpm tauri dev      # the app, with the real backend
 pnpm tauri build --debug   # debug app at target/debug/bundle/macos/Mneme.app
 pnpm tauri build           # release app at target/release/bundle/macos/Mneme.app
 ```
@@ -78,13 +78,13 @@ Each crate builds and tests alone with `cargo build -p <crate>` and `cargo test 
 The UI imports one object, `api`, from `src/lib/api`. Its shape is the contract in `src/lib/api/types.ts`, which is copied from [PRD 05](prds/05-ui.md#api-contract). There are two implementations:
 
 - `mock.ts`: in-memory data, used in the browser dev server and in tests.
-- `tauri.ts`: calls the Rust backend. It is a stub until issue 021; every method fails with "not implemented".
+- `tauri.ts`: calls the Rust backend's commands and listens to its events (`src-tauri/src/commands.rs`, `host.rs`, `tray.rs`).
 
-`index.ts` picks Tauri inside the app and the mock everywhere else. Setting `VITE_MNEME_API=mock` or `VITE_MNEME_API=tauri` when starting Vite overrides that. `pnpm tauri dev` sets it to `mock` (see `beforeDevCommand` in `src-tauri/tauri.conf.json`), so the app window shows working screens before the backend exists. Issue 021 removes that override. A built app always uses the Tauri implementation.
+`index.ts` picks Tauri inside the app and the mock everywhere else. Setting `VITE_MNEME_API=mock` or `VITE_MNEME_API=tauri` when starting Vite overrides that, for example `VITE_MNEME_API=mock pnpm tauri dev` to see the mock in the app window. A built app always uses the Tauri implementation.
 
 ### The mock API
 
-The mock starts with four meetings (one of them interrupted, one with an empty transcript), a catalog of five models with one installed, and both permissions granted. Recording runs a timer that ticks once a second and adds a transcript line every five seconds. Downloads report progress through `downloading`, `verifying` and `done`, and can be cancelled.
+The mock starts with four meetings (one of them interrupted, one with an empty transcript), the same ten-model catalog as the backend (four of them retired, so six are listed) with one installed, and both permissions granted. Recording runs a timer that ticks once a second and adds a transcript line every five seconds. Downloads report progress through `downloading`, `verifying` and `done`, and can be cancelled.
 
 In the browser, pick a starting point with the query string:
 
@@ -96,7 +96,7 @@ In the browser, pick a starting point with the query string:
 | `/?mock=long-transcript` | The default plus a meeting with a 2,000-line transcript |
 | `&mockLatency=300`       | Any of the above, with every call delayed by 300 ms     |
 
-While the dev server runs, the controls are also on `__mnemeMock` in the browser console, for example `__mnemeMock.setInstalledModels([])` or `__mnemeMock.failNextDownload()`.
+While the dev server runs, the controls are also on `__mnemeMock` in the browser console, for example `__mnemeMock.setInstalledModels([])`, `__mnemeMock.failNextDownload()`, `__mnemeMock.emitRecordingError("start")` or `__mnemeMock.emitOpenMeeting()`.
 
 In tests, import the same instance the app uses and drive it through `mock`. The test setup resets it after every test.
 

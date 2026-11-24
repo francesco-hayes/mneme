@@ -48,7 +48,7 @@ export interface MockOptions {
   meetings?: MockMeetingSeed[] | ((now: Date) => MockMeetingSeed[]);
   /** Ids of installed models. Default: one model. Pass `[]` for "none installed". */
   installedModelIds?: string[];
-  /** Merged over `{ defaultModelId: <first installed or null>, language: "auto", globalShortcut: null }`. */
+  /** Merged over `{ defaultModelId: <first installed or null>, language: "auto", globalShortcut: null, spellcheck: false }`. */
   settings?: Partial<Settings>;
   /** Merged over both permissions granted. */
   permissions?: Partial<Permissions>;
@@ -95,6 +95,12 @@ export interface MockControls {
    * for from the menu bar or the global shortcut fails. Nothing else changes.
    */
   emitRecordingError(action: RecordingError["action"], message?: string): void;
+  /**
+   * Asks the window to show a meeting, as the backend does when Open Mneme is
+   * chosen from the menu bar during a recording. Default: the live meeting;
+   * with none, nothing is sent.
+   */
+  emitOpenMeeting(meetingId?: string): void;
   /** Ids passed to `showInFinder` since the last reset, oldest first. */
   readonly revealedInFinder: readonly string[];
 }
@@ -172,7 +178,13 @@ const IDLE: RecordingState = {
   status: "idle",
   meetingId: null,
   elapsedSecs: 0,
+  modelId: null,
+  warning: null,
 };
+
+/** What the backend says when system audio is known to be refused at the start. */
+export const MOCK_MIC_ONLY_WARNING =
+  "System audio access is denied, so this meeting records the microphone only. Allow Mneme in System Settings > Privacy & Security > Screen & System Audio Recording, under System Audio Recording Only, then quit and reopen Mneme.";
 
 const sleep = (ms: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -208,6 +220,7 @@ export function createMockApi(initialOptions: MockOptions = {}): MockApi {
   // Listeners survive `reset`.
   const recordingListeners = new Set<(s: RecordingState) => void>();
   const recordingErrorListeners = new Set<(e: RecordingError) => void>();
+  const openMeetingListeners = new Set<(meetingId: string) => void>();
   const downloadListeners = new Set<(p: DownloadProgress) => void>();
 
   function toRecord(seed: MockMeetingSeed): MeetingRecord {
@@ -265,6 +278,7 @@ export function createMockApi(initialOptions: MockOptions = {}): MockApi {
       defaultModelId: firstInstalledModelId(),
       language: "auto",
       globalShortcut: null,
+      spellcheck: false,
       ...options.settings,
     };
     permissions = {
@@ -446,7 +460,7 @@ export function createMockApi(initialOptions: MockOptions = {}): MockApi {
           );
         }
         // A denied system audio permission still records, with the microphone only.
-        resolvePermission("systemAudio");
+        const micOnly = resolvePermission("systemAudio") === "denied";
 
         const start = now();
         meetingCounter += 1;
@@ -465,6 +479,8 @@ export function createMockApi(initialOptions: MockOptions = {}): MockApi {
           status: "recording",
           meetingId: meeting.id,
           elapsedSecs: 0,
+          modelId,
+          warning: micOnly ? MOCK_MIC_ONLY_WARNING : null,
         };
         recordingModelId = modelId;
         tickTimer = setInterval(tick, tickMs);
@@ -540,6 +556,14 @@ export function createMockApi(initialOptions: MockOptions = {}): MockApi {
       recordingErrorListeners.add(cb);
       return () => {
         recordingErrorListeners.delete(cb);
+      };
+    },
+
+    // Only `mock.emitOpenMeeting` sends these.
+    onOpenMeeting: (cb) => {
+      openMeetingListeners.add(cb);
+      return () => {
+        openMeetingListeners.delete(cb);
       };
     },
 
@@ -692,6 +716,10 @@ export function createMockApi(initialOptions: MockOptions = {}): MockApi {
       for (const listener of [...recordingErrorListeners]) {
         listener({ action, message });
       }
+    },
+    emitOpenMeeting(meetingId = recording.meetingId ?? undefined) {
+      if (meetingId === undefined) return;
+      for (const listener of [...openMeetingListeners]) listener(meetingId);
     },
     get revealedInFinder() {
       return [...revealedInFinder];

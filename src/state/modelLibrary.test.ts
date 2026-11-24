@@ -61,6 +61,7 @@ describe("loading", () => {
       defaultModelId: "base.en",
       language: "auto",
       globalShortcut: null,
+      spellcheck: false,
     });
   });
 

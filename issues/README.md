@@ -33,6 +33,7 @@ Statuses: `todo`, `in progress`, `done`, `blocked`, `paused` (stopped part-way o
 | [024](024-permissions-flow.md) | Permissions flow | 06 | app | 023 | done | open |
 | [025](025-signing-and-release.md) | Signing, notarization, local-only audit | 06 | release | 021 | done | open |
 | [027](027-show-recording-errors.md) | Show start and stop errors from outside the window | 06 | ui | 022, 023 | done | open |
+| [028](028-spellcheck-and-recording-fixes.md) | Spellcheck setting, mic-only warning, Open Mneme, Delete lock, Starting… | 05, 06 | several | 024, 027 | done | open |
 
 ## Lanes
 

@@ -13,13 +13,15 @@
 //!   "defaultModelId": "large-v3-turbo",
 //!   "globalShortcut": "CmdOrCtrl+Shift+M",
 //!   "language": "en",
-//!   "meetingsRoot": "/Users/ana/Notes/Meetings"
+//!   "meetingsRoot": "/Users/ana/Notes/Meetings",
+//!   "spellcheck": true
 //! }
 //! ```
 //!
 //! The file holds only what was set. A key that is missing, `null` or an
 //! empty string means "not set", and the setting has its default: no default
-//! model, language `en`, no shortcut, the meetings root the app passed in.
+//! model, language `en`, no shortcut, the meetings root the app passed in,
+//! spellcheck off.
 //! The default root is never written to the file, so it follows the app (a
 //! home folder that moved, say) until the user picks a root of their own.
 //!
@@ -80,6 +82,7 @@ const KEY_DEFAULT_MODEL_ID: &str = "defaultModelId";
 const KEY_LANGUAGE: &str = "language";
 const KEY_GLOBAL_SHORTCUT: &str = "globalShortcut";
 const KEY_MEETINGS_ROOT: &str = "meetingsRoot";
+const KEY_SPELLCHECK: &str = "spellcheck";
 
 /// How many names are tried for a file moved aside: `.bad`, then `.bad.2`
 /// to `.bad.999`.
@@ -88,8 +91,8 @@ const MAX_BAD_FILES: u32 = 999;
 /// The settings in effect.
 ///
 /// Serializes with the field names of the frontend contract
-/// (`defaultModelId`, `language`, `globalShortcut`) plus `meetingsRoot`,
-/// which the contract does not have.
+/// (`defaultModelId`, `language`, `globalShortcut`, `spellcheck`) plus
+/// `meetingsRoot`, which the contract does not have.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Settings {
@@ -107,6 +110,8 @@ pub struct Settings {
     /// that is valid UTF-8: the one in the file, or the default the store
     /// was opened with.
     pub meetings_root: PathBuf,
+    /// Whether the notes editor marks misspelled words. Off by default.
+    pub spellcheck: bool,
 }
 
 /// What a [`SettingsPatch`] does to one setting.
@@ -122,7 +127,7 @@ pub enum Patch<T> {
     #[default]
     Keep,
     /// Back to "not set": no default model, no shortcut, language `en`,
-    /// the default meetings root.
+    /// the default meetings root, spellcheck off.
     Clear,
     /// Set it to this value.
     Set(T),
@@ -170,6 +175,8 @@ pub struct SettingsPatch {
     /// [`Patch::Clear`].
     #[serde(default)]
     pub meetings_root: Patch<PathBuf>,
+    #[serde(default)]
+    pub spellcheck: Patch<bool>,
 }
 
 /// Something [`SettingsStore::open`] found wrong with the file. None of
@@ -472,6 +479,27 @@ fn read_settings(
             .unwrap_or_else(|| DEFAULT_LANGUAGE.to_owned()),
         global_shortcut: text_of(document, KEY_GLOBAL_SHORTCUT, true, warnings),
         meetings_root,
+        spellcheck: bool_of(document, KEY_SPELLCHECK, warnings).unwrap_or(false),
+    }
+}
+
+/// The boolean under `key`, or `None` when it is missing or `null`. A value
+/// that is not a boolean is not set either, and is a warning.
+fn bool_of(
+    document: &Map<String, Value>,
+    key: &'static str,
+    warnings: &mut Vec<SettingsWarning>,
+) -> Option<bool> {
+    match document.get(key) {
+        None | Some(Value::Null) => None,
+        Some(Value::Bool(value)) => Some(*value),
+        Some(other) => {
+            warnings.push(SettingsWarning::InvalidValue {
+                key,
+                reason: format!("is {}, not a boolean", kind_of(other)),
+            });
+            None
+        }
     }
 }
 
@@ -548,6 +576,15 @@ fn apply(document: &mut Map<String, Value>, patch: &SettingsPatch) -> Result<()>
     put(KEY_LANGUAGE, trimmed(&patch.language));
     put(KEY_GLOBAL_SHORTCUT, trimmed(&patch.global_shortcut));
     put(KEY_MEETINGS_ROOT, meetings_root);
+    match patch.spellcheck {
+        Patch::Keep => {}
+        Patch::Clear => {
+            document.remove(KEY_SPELLCHECK);
+        }
+        Patch::Set(on) => {
+            document.insert(KEY_SPELLCHECK.to_owned(), Value::Bool(on));
+        }
+    }
     Ok(())
 }
 

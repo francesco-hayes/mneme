@@ -11,8 +11,8 @@ export interface Meeting extends MeetingSummary { notes: string; transcriptLineC
 export interface TranscriptLine { t: string; speaker: 'Me' | 'Them'; text: string }
 export interface ModelInfo { id: string; name: string; sizeBytes: number; note: string; englishOnly: boolean; installed: boolean }
 export interface DownloadProgress { modelId: string; receivedBytes: number; totalBytes: number; state: 'downloading' | 'verifying' | 'done' | 'cancelled' | 'error'; error?: string }
-export interface Settings { defaultModelId: string | null; language: string; globalShortcut: string | null }
-export interface RecordingState { status: 'idle' | 'recording' | 'stopping'; meetingId: string | null; elapsedSecs: number }
+export interface Settings { defaultModelId: string | null; language: string; globalShortcut: string | null; spellcheck: boolean }
+export interface RecordingState { status: 'idle' | 'recording' | 'stopping'; meetingId: string | null; elapsedSecs: number; modelId: string | null; warning: string | null }
 export interface Permissions { microphone: Permission; systemAudio: Permission }
 export interface RecordingError { action: 'start' | 'stop'; message: string }
 
@@ -28,6 +28,7 @@ export interface Api {
   getRecordingState(): Promise<RecordingState>;
   onRecordingState(cb: (s: RecordingState) => void): () => void;
   onRecordingError(cb: (e: RecordingError) => void): () => void;
+  onOpenMeeting(cb: (meetingId: string) => void): () => void;
   listModels(): Promise<ModelInfo[]>;
   downloadModel(id: string): Promise<void>;
   cancelDownload(id: string): Promise<void>;

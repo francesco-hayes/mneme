@@ -750,16 +750,17 @@ describe("with the mock's timers", () => {
       expect(button("Delete Small (English)")).toBeEnabled();
     });
 
-    test("while a recording runs, no model can be deleted", async () => {
+    test("while a recording runs, only the model it uses cannot be deleted", async () => {
       mockApi.mock.reset({ installedModelIds: ["base.en", "small.en"] });
+      // The default, Base, is the one the recording uses.
       await mockApi.startMeeting();
       await openModels();
 
       expect(button("Delete Base (English)")).toBeDisabled();
-      expect(button("Delete Small (English)")).toBeDisabled();
+      expect(button("Delete Small (English)")).toBeEnabled();
       expect(
         screen.getByText(
-          /Models cannot be deleted while a recording is running\./,
+          "Base (English) is in use by the recording and cannot be deleted until it stops.",
         ),
       ).toBeVisible();
       // Everything else still works: the default, and downloads.
@@ -769,28 +770,75 @@ describe("with the mock's timers", () => {
       await click("Stop");
       await advance(600);
       expect(button("Delete Base (English)")).toBeEnabled();
-      expect(button("Delete Small (English)")).toBeEnabled();
-      expect(screen.queryByText(/Models cannot be deleted/)).toBeNull();
+      expect(screen.queryByText(/is in use by the recording/)).toBeNull();
     });
 
-    test("a recording that starts while the question is open withdraws it", async () => {
+    test("a recording that starts with a model while its question is open withdraws it", async () => {
       const deleteModel = vi.spyOn(mockApi, "deleteModel");
       await openModels({ installedModelIds: ["base.en", "small.en"] });
       await click("Delete Small (English)");
+      await click("Delete Base (English)");
+      expect(
+        screen.getByRole("group", { name: "Delete Base (English)?" }),
+      ).toBeInTheDocument();
       expect(
         screen.getByRole("group", { name: "Delete Small (English)?" }),
       ).toBeInTheDocument();
 
-      // Started from the menu bar or the global shortcut.
+      // Started from the menu bar or the global shortcut, with Base.
       await mockApi.startMeeting();
       await advance();
 
       expect(
-        screen.queryByRole("group", { name: "Delete Small (English)?" }),
+        screen.queryByRole("group", { name: "Delete Base (English)?" }),
       ).toBeNull();
-      expect(button("Delete Small (English)")).toBeDisabled();
+      expect(button("Delete Base (English)")).toBeDisabled();
+      // The other model's question is not the recording's business.
+      expect(
+        screen.getByRole("group", { name: "Delete Small (English)?" }),
+      ).toBeInTheDocument();
       expect(deleteModel).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("spellcheck", () => {
+  test("is off at first, and the switch saves each change", async () => {
+    renderSettings();
+    const toggle = await screen.findByRole("switch", {
+      name: "Check spelling",
+    });
+    expect(toggle).not.toBeChecked();
+
+    await userEvent.click(toggle);
+    await waitFor(async () =>
+      expect((await savedSettings()).spellcheck).toBe(true),
+    );
+    expect(toggle).toBeChecked();
+
+    await userEvent.click(toggle);
+    await waitFor(async () =>
+      expect((await savedSettings()).spellcheck).toBe(false),
+    );
+    expect(toggle).not.toBeChecked();
+  });
+
+  test("a save that fails says why and shows the saved value again", async () => {
+    renderSettings();
+    const toggle = await screen.findByRole("switch", {
+      name: "Check spelling",
+    });
+    mockApi.mock.failNext("updateSettings", "The settings file is locked.");
+
+    await userEvent.click(toggle);
+
+    expect(
+      await screen.findByText(
+        "Could not change spellcheck: The settings file is locked.",
+      ),
+    ).toBeVisible();
+    expect(toggle).not.toBeChecked();
+    expect((await savedSettings()).spellcheck).toBe(false);
   });
 });
 

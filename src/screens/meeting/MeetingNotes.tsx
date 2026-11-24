@@ -4,6 +4,7 @@ import { NotesEditor, type NotesEditorHandle } from "../../editor/NotesEditor";
 import type { Meeting } from "../../lib/api";
 import { cx } from "../../lib/cx";
 import { useWindowEvent } from "../../lib/useWindowEvent";
+import { useModelLibrary } from "../../state/modelLibrary";
 import { useBeforeStop } from "../../state/recording";
 import { notesAutosave } from "./notesAutosave";
 import notices from "./notices.module.css";
@@ -45,6 +46,7 @@ export function MeetingNotes({
     return { saver, initialText: saver.text };
   });
   const status = useSyncExternalStore(saver.subscribe, () => saver.status);
+  const spellcheck = useSpellcheckSetting();
 
   // Stop waits for this, so the notes are on disk before the meeting ends.
   // It does not wait for long: a save that hangs must not keep the microphone
@@ -80,7 +82,21 @@ export function MeetingNotes({
         autoFocus={autoFocus}
         label="Notes"
         placeholder="Notes"
+        spellcheck={spellcheck}
       />
     </>
   );
+}
+
+/**
+ * The spellcheck setting, off until the settings have been read. The settings
+ * live in the model library, which only reads when asked: a meeting opened
+ * before Settings was ever shown asks once.
+ */
+function useSpellcheckSetting(): boolean {
+  const { status, settings, load } = useModelLibrary();
+  useEffect(() => {
+    if (status === "idle") void load();
+  }, [status, load]);
+  return settings?.spellcheck ?? false;
 }

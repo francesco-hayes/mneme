@@ -58,6 +58,10 @@ impl Host for TauriHost {
         tray::recording_state_changed(&self.app, state);
     }
 
+    fn starting(&self) {
+        tray::redraw(&self.app);
+    }
+
     fn download_progress(&self, progress: &dto::DownloadProgress) {
         if let Err(error) = self.app.emit(DOWNLOAD_PROGRESS_EVENT, progress.clone()) {
             eprintln!("mneme: sending download progress: {error}");

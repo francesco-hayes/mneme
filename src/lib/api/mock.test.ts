@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
   createMockApi,
+  MOCK_MIC_ONLY_WARNING,
   mockOptionsFromSearch,
   mockScenarios,
   type MockOptions,
@@ -168,6 +169,8 @@ describe("recording", () => {
       status: "recording",
       meetingId: meeting.id,
       elapsedSecs: 0,
+      modelId: "base.en",
+      warning: null,
     });
     expect((await api.listMeetings())[0].id).toBe(meeting.id);
   });
@@ -209,6 +212,8 @@ describe("recording", () => {
       status: "stopping",
       meetingId: id,
       elapsedSecs: 12,
+      modelId: "base.en",
+      warning: null,
     });
     expect(stopped).toBe(false);
 
@@ -224,6 +229,8 @@ describe("recording", () => {
       status: "idle",
       meetingId: null,
       elapsedSecs: 0,
+      modelId: null,
+      warning: null,
     });
     expect(states.at(-2)?.status).toBe("stopping");
     expect(states.at(-1)?.status).toBe("idle");
@@ -551,6 +558,7 @@ describe("settings and permissions", () => {
       defaultModelId: "base.en",
       language: "auto",
       globalShortcut: null,
+      spellcheck: false,
     });
   });
 
@@ -564,6 +572,7 @@ describe("settings and permissions", () => {
       defaultModelId: "base.en",
       language: "pt",
       globalShortcut: "CommandOrControl+Shift+R",
+      spellcheck: false,
     });
     expect(await api.getSettings()).toEqual(updated);
 
@@ -625,6 +634,8 @@ describe("controls", () => {
       status: "idle",
       meetingId: null,
       elapsedSecs: 0,
+      modelId: null,
+      warning: null,
     });
     const eventCount = events.length;
     const stateCount = states.length;
@@ -695,5 +706,42 @@ describe("scenarios", () => {
     expect(mockOptionsFromSearch("?mockCancelDelay=3000")).toEqual({
       download: { cancelMs: 3000 },
     });
+  });
+});
+
+describe("recording warnings and open requests", () => {
+  test("a meeting with system audio denied records with a warning that lasts until stop", async () => {
+    const api = create({ permissions: { systemAudio: "denied" } });
+    const { id } = await api.startMeeting();
+    const state = await api.getRecordingState();
+    expect(state.warning).toBe(MOCK_MIC_ONLY_WARNING);
+    expect(state.modelId).toBe("base.en");
+
+    const stopping = api.stopMeeting();
+    await vi.advanceTimersByTimeAsync(0);
+    expect((await api.getRecordingState()).warning).toBe(MOCK_MIC_ONLY_WARNING);
+    await vi.advanceTimersByTimeAsync(600);
+    expect((await stopping).id).toBe(id);
+    expect((await api.getRecordingState()).warning).toBeNull();
+  });
+
+  test("emitOpenMeeting sends the live meeting, and nothing when idle", async () => {
+    const api = create();
+    const opened: string[] = [];
+    const unsubscribe = api.onOpenMeeting((meetingId) =>
+      opened.push(meetingId),
+    );
+
+    api.mock.emitOpenMeeting();
+    expect(opened).toEqual([]);
+
+    const { id } = await api.startMeeting();
+    api.mock.emitOpenMeeting();
+    api.mock.emitOpenMeeting("mtg-standup");
+    expect(opened).toEqual([id, "mtg-standup"]);
+
+    unsubscribe();
+    api.mock.emitOpenMeeting();
+    expect(opened).toHaveLength(2);
   });
 });
