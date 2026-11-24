@@ -81,6 +81,9 @@ const topBar = () => within(screen.getByRole("banner"));
 const content = () => within(screen.getByRole("main"));
 /** The New meeting button in the top bar: the one that is always there. */
 const newMeeting = () => topBar().getByRole("button", { name: "New meeting" });
+/** The same button while a start loads its model. */
+const startingButton = () =>
+  topBar().getByRole("button", { name: "Starting…" });
 const heading = (name: string | RegExp) =>
   screen.findByRole("heading", { name });
 
@@ -371,7 +374,7 @@ describe("New meeting", () => {
 
       fireEvent.click(newMeeting());
       await advance();
-      expect(newMeeting()).toBeDisabled();
+      expect(startingButton()).toBeDisabled();
       fireEvent.keyDown(window, { key: "n", metaKey: true });
       // The start settles, then the meeting screen it opens loads.
       await advance(100);
@@ -382,6 +385,63 @@ describe("New meeting", () => {
       expect(
         screen.getByRole("heading", { level: 1, name: /^Meeting, / }),
       ).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("is disabled while a start from the menu bar loads its model", async () => {
+    vi.useFakeTimers();
+    try {
+      const start = vi.spyOn(mockApi, "startMeeting");
+      renderHome();
+      await advance();
+      expect(newMeeting()).toBeEnabled();
+
+      // As the menu bar or the shortcut does: the model takes a while.
+      const outside = mockApi.mock.startFromOutside(2000);
+      await advance();
+      expect(startingButton()).toBeDisabled();
+      expect(startingButton()).toHaveAttribute(
+        "title",
+        "A meeting is starting.",
+      );
+      fireEvent.keyDown(window, { key: "n", metaKey: true });
+      await advance();
+      expect(start).not.toHaveBeenCalled();
+      expect(screen.queryByRole("alert")).toBeNull();
+
+      // Recording now: still disabled, for the usual reason, and the bar shows.
+      await advance(2000);
+      await outside;
+      expect(newMeeting()).toBeDisabled();
+      expect(screen.getByRole("region", { name: "Recording" })).toBeVisible();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("comes back when a start from the menu bar fails", async () => {
+    vi.useFakeTimers();
+    try {
+      renderHome();
+      await advance();
+      mockApi.mock.failNext(
+        "startMeeting",
+        "The transcription model could not be loaded.",
+      );
+
+      const outside = mockApi.mock.startFromOutside(1000);
+      await advance();
+      expect(startingButton()).toBeDisabled();
+      await advance(1000);
+      await outside;
+
+      expect(newMeeting()).toBeEnabled();
+      expect((await mockApi.getRecordingState()).starting).toBe(false);
+      fireEvent.click(newMeeting());
+      await advance();
+      expect((await mockApi.getRecordingState()).status).toBe("recording");
     } finally {
       vi.useRealTimers();
     }

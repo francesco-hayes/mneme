@@ -81,8 +81,8 @@ pub trait Host: Send + Sync + 'static {
     fn reveal(&self, path: &Path) -> Result<()>;
     /// Opens the pane of System Settings where the permission is changed.
     fn open_privacy_settings(&self, kind: PermissionKind) -> Result<()>;
-    /// A start began loading its model. The window is not told (the state
-    /// stays idle until the meeting exists), but the menu bar redraws.
+    /// A start began loading its model. The window has been sent an idle
+    /// state with `starting` set; the menu bar redraws.
     fn starting(&self) {}
 }
 
@@ -133,8 +133,8 @@ impl Live {
 /// One recording at a time: the whole state of it.
 enum Recording {
     Idle,
-    /// `startMeeting` is running: the model is loading. Reported as idle,
-    /// but a second start is refused.
+    /// `startMeeting` is running: the model is loading. Reported as idle
+    /// with `starting` set, and a second start is refused.
     Starting {
         model_id: String,
     },
@@ -165,7 +165,14 @@ impl Recording {
 
     fn state(&self) -> dto::RecordingState {
         let status = match self {
-            Recording::Idle | Recording::Starting { .. } => return dto::RecordingState::idle(),
+            Recording::Idle => return dto::RecordingState::idle(),
+            Recording::Starting { model_id } => {
+                return dto::RecordingState {
+                    model_id: Some(model_id.clone()),
+                    starting: true,
+                    ..dto::RecordingState::idle()
+                };
+            }
             Recording::Active { .. } => "recording",
             Recording::Stopping(_) => "stopping",
         };
@@ -176,6 +183,7 @@ impl Recording {
             elapsed_secs: live.session.elapsed().as_secs(),
             model_id: Some(live.model_id.clone()),
             warning: live.warning(),
+            starting: false,
         }
     }
 }
@@ -377,6 +385,8 @@ impl AppCore {
             model
         };
         self.changed.notify_all();
+        // Still idle, so the window can disable its own start meanwhile.
+        self.emit_state();
         self.host.starting();
 
         match self.start_session(&model_id, &model_path) {

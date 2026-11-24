@@ -11,7 +11,7 @@ import {
   MOCK_MODEL_CATALOG,
   MOCK_RETIRED_MODEL_IDS,
 } from "./mockSeed";
-import type { DownloadProgress, RecordingState } from "./types";
+import type { DownloadProgress, RecordingError, RecordingState } from "./types";
 
 const NOW = new Date(2026, 10, 12, 15, 0, 0); // Nov 12 2026, 3:00 PM local time
 
@@ -171,6 +171,7 @@ describe("recording", () => {
       elapsedSecs: 0,
       modelId: "base.en",
       warning: null,
+      starting: false,
     });
     expect((await api.listMeetings())[0].id).toBe(meeting.id);
   });
@@ -183,14 +184,25 @@ describe("recording", () => {
     const meeting = await api.startMeeting();
     await vi.advanceTimersByTimeAsync(3000);
 
-    expect(states.map((s) => s.elapsedSecs)).toEqual([0, 1, 2, 3]);
-    expect(states.every((s) => s.status === "recording")).toBe(true);
-    expect(states.every((s) => s.meetingId === meeting.id)).toBe(true);
+    // First the start, as the backend sends it while the model loads.
+    const [loading, ...recording] = states;
+    expect(loading).toEqual({
+      status: "idle",
+      meetingId: null,
+      elapsedSecs: 0,
+      modelId: "base.en",
+      warning: null,
+      starting: true,
+    });
+    expect(recording.map((s) => s.elapsedSecs)).toEqual([0, 1, 2, 3]);
+    expect(recording.every((s) => s.status === "recording")).toBe(true);
+    expect(recording.every((s) => s.meetingId === meeting.id)).toBe(true);
+    expect(recording.every((s) => !s.starting)).toBe(true);
     expect((await api.getRecordingState()).elapsedSecs).toBe(3);
 
     unsubscribe();
     await vi.advanceTimersByTimeAsync(2000);
-    expect(states).toHaveLength(4);
+    expect(states).toHaveLength(5);
     expect((await api.getRecordingState()).elapsedSecs).toBe(5);
   });
 
@@ -214,6 +226,7 @@ describe("recording", () => {
       elapsedSecs: 12,
       modelId: "base.en",
       warning: null,
+      starting: false,
     });
     expect(stopped).toBe(false);
 
@@ -231,6 +244,7 @@ describe("recording", () => {
       elapsedSecs: 0,
       modelId: null,
       warning: null,
+      starting: false,
     });
     expect(states.at(-2)?.status).toBe("stopping");
     expect(states.at(-1)?.status).toBe("idle");
@@ -242,6 +256,60 @@ describe("recording", () => {
       { t: "00:00:05", speaker: "Them", text: "Can you hear me all right?" },
       { t: "00:00:10", speaker: "Me", text: "Yes, loud and clear." },
     ]);
+  });
+
+  test("a start from outside the window is `starting` while its model loads", async () => {
+    const api = create();
+    const states: RecordingState[] = [];
+    const errors: RecordingError[] = [];
+    api.onRecordingState((s) => states.push(s));
+    api.onRecordingError((e) => errors.push(e));
+
+    const started = api.mock.startFromOutside(1000);
+    expect(await api.getRecordingState()).toMatchObject({
+      status: "idle",
+      meetingId: null,
+      modelId: "base.en",
+      starting: true,
+    });
+    // The window's own start is refused meanwhile, as the backend does.
+    await expect(api.startMeeting()).rejects.toThrow(
+      "A meeting is already being recorded.",
+    );
+
+    await vi.advanceTimersByTimeAsync(1000);
+    await started;
+    const state = await api.getRecordingState();
+    expect(state).toMatchObject({ status: "recording", starting: false });
+    expect(states.map((s) => s.starting)).toEqual([true, false]);
+    expect(errors).toEqual([]);
+    const stopped = api.stopMeeting();
+    await vi.advanceTimersByTimeAsync(600);
+    await stopped;
+
+    // A start that fails during the load goes back to idle and says why.
+    api.mock.failNext("startMeeting", "The model could not be loaded.");
+    const failed = api.mock.startFromOutside(1000);
+    await vi.advanceTimersByTimeAsync(1000);
+    await failed;
+    expect(await api.getRecordingState()).toEqual({
+      status: "idle",
+      meetingId: null,
+      elapsedSecs: 0,
+      modelId: null,
+      warning: null,
+      starting: false,
+    });
+    expect(errors).toEqual([
+      { action: "start", message: "The model could not be loaded." },
+    ]);
+
+    // One refused at once sends no state, only the error.
+    api.mock.setInstalledModels([]);
+    const count = states.length;
+    await api.mock.startFromOutside(1000);
+    expect(states).toHaveLength(count);
+    expect(errors.at(-1)?.message).toMatch(/^No transcription model/);
   });
 
   test("with stopDelayMs 0 a stop completes without waiting on a timer", async () => {
@@ -636,6 +704,7 @@ describe("controls", () => {
       elapsedSecs: 0,
       modelId: null,
       warning: null,
+      starting: false,
     });
     const eventCount = events.length;
     const stateCount = states.length;
