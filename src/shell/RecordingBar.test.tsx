@@ -213,3 +213,32 @@ test("a before-stop handler that fails does not block the stop", async () => {
   expect(bar()).toBeNull();
   expect((await mockApi.getRecordingState()).status).toBe("idle");
 });
+
+test("a mic-only recording says so in the bar, except on the live meeting", async () => {
+  mockApi.mock.setPermission("systemAudio", "denied");
+  await startRecording();
+  const sentence = (await mockApi.getRecordingState()).warning!;
+  expect(sentence).toMatch(/^System audio access is denied/);
+
+  // The live meeting has the whole sentence above the notes; the bar does
+  // not repeat it.
+  expect(within(bar()!).queryByText("Mic only")).toBeNull();
+
+  await click("Back");
+  const label = within(bar()!).getByText("Mic only");
+  const warning = label.parentElement!;
+  // Short on screen; the whole sentence in the tooltip and for a screen reader.
+  expect(label).toHaveAttribute("aria-hidden", "true");
+  expect(warning).toHaveAttribute("title", sentence);
+  expect(within(warning).getByText(sentence)).toHaveClass("visually-hidden");
+
+  await click("Settings");
+  expect(within(bar()!).getByText("Mic only")).toBeInTheDocument();
+});
+
+test("no warning in the bar when both channels are recorded", async () => {
+  await startRecording();
+  await click("Back");
+  expect(within(bar()!).queryByText("Mic only")).toBeNull();
+  expect(within(bar()!).queryByText("Not all audio recorded")).toBeNull();
+});

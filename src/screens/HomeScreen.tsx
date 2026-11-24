@@ -90,7 +90,10 @@ export function HomeScreen({
   const [starting, setStarting] = useState(false);
   const startInFlight = useRef(false);
   const [startError, setStartError] = useState<string | null>(null);
-  const canStart = !noModel && !isActive && !starting;
+  // A start from here, or from the menu bar or the shortcut, is loading its
+  // model: a second one would be refused.
+  const loading = starting || recording.starting;
+  const canStart = !noModel && !isActive && !loading;
 
   async function startMeeting() {
     if (!canStart || startInFlight.current) return;
@@ -151,7 +154,9 @@ export function HomeScreen({
     ? "Download a transcription model in Settings first."
     : isActive
       ? "A meeting is being recorded. Stop it to start another."
-      : undefined;
+      : loading
+        ? "A meeting is starting."
+        : undefined;
   const newMeetingButton = (variant: "primary" | "default") => (
     <Button
       variant={variant}
@@ -159,7 +164,7 @@ export function HomeScreen({
       title={disabledReason}
       onClick={() => void startMeeting()}
     >
-      New meeting
+      {loading ? "Starting…" : "New meeting"}
     </Button>
   );
   const modelNeeded = (

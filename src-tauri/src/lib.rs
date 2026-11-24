@@ -148,9 +148,10 @@ pub fn run() {
                 core.shutdown();
             }
         }
-        // A click on the Dock icon while the window is hidden.
+        // A click on the Dock icon: the same as Open Mneme in the menu bar,
+        // so a recording goes to its live meeting.
         #[cfg(target_os = "macos")]
-        RunEvent::Reopen { .. } => tray::show_main_window(handle),
+        RunEvent::Reopen { .. } => tray::open_mneme(handle),
         _ => {}
     });
 }

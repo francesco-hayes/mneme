@@ -143,6 +143,9 @@ pub struct RecordingState {
     /// Why a channel is not being recorded (system audio refused, a device
     /// that failed), or `None`. Kept for the rest of the meeting.
     pub warning: Option<String>,
+    /// A start is loading its model. Only with status `idle`: the meeting
+    /// does not exist yet, so a second start would be refused.
+    pub starting: bool,
 }
 
 impl RecordingState {
@@ -153,6 +156,7 @@ impl RecordingState {
             elapsed_secs: 0,
             model_id: None,
             warning: None,
+            starting: false,
         }
     }
 }
@@ -195,7 +199,7 @@ mod tests {
             serde_json::to_value(RecordingState::idle()).unwrap(),
             json!({
                 "status": "idle", "meetingId": null, "elapsedSecs": 0,
-                "modelId": null, "warning": null
+                "modelId": null, "warning": null, "starting": false
             })
         );
         let progress = DownloadProgress {

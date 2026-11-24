@@ -119,7 +119,7 @@ impl TestHost {
             .lock()
             .unwrap()
             .iter()
-            .map(|s| s.status)
+            .map(|s| if s.starting { "starting" } else { s.status })
             .collect()
     }
 
@@ -178,7 +178,8 @@ impl AudioSource for RefusedSystemAudio {
 
 impl Host for TestHost {
     fn recording_state(&self, state: &dto::RecordingState) {
-        if state.status == "idle" {
+        // A start that is loading is idle too, but no meeting has closed.
+        if state.status == "idle" && !state.starting {
             let store = Store::open(&self.meetings_root).unwrap();
             let list = store.list_meetings().unwrap();
             let statuses = list.meetings.iter().map(|m| m.status).collect();
@@ -398,9 +399,12 @@ fn start_then_stop_gives_a_complete_meeting_with_transcript_duration_and_note_ti
     assert_eq!(timeline.lines().count(), 1, "{timeline}");
     assert!(timeline.contains("decided to ship"), "{timeline}");
 
-    // The state the window saw: recording at least twice (the change and a
-    // tick), then stopping, then idle, and nothing after it.
+    // The state the window saw: starting while the model loaded, recording
+    // at least twice (the change and a tick), then stopping, then idle, and
+    // nothing after it.
     let statuses = f.host.statuses();
+    assert_eq!(statuses[0], "starting");
+    assert_eq!(statuses.iter().filter(|s| **s == "starting").count(), 1);
     let recording = statuses.iter().filter(|s| **s == "recording").count();
     assert!(recording >= 2, "{statuses:?}");
     assert_eq!(statuses[statuses.len() - 2..], ["stopping", "idle"]);
@@ -467,8 +471,15 @@ fn a_second_start_is_refused_while_the_model_is_still_loading() {
         !f.host.loaded.lock().unwrap().is_empty()
     });
 
-    // Loading is not yet recording, but the slot is taken.
-    assert_eq!(f.core.recording_state(), dto::RecordingState::idle());
+    // Loading is not yet recording, but the slot is taken, and the window
+    // has been told so.
+    let loading = dto::RecordingState {
+        model_id: Some("small".to_owned()),
+        starting: true,
+        ..dto::RecordingState::idle()
+    };
+    assert_eq!(f.core.recording_state(), loading);
+    assert_eq!(f.host.states.lock().unwrap().last(), Some(&loading));
     assert!(f.core.is_starting());
     assert_eq!(f.core.start_meeting().unwrap_err(), ALREADY_RECORDING);
     assert!(f.core.delete_model("small").is_err());
@@ -573,6 +584,9 @@ fn start_is_refused_when_the_microphone_is_denied() {
     assert!(error.starts_with("Microphone access is denied."), "{error}");
     assert!(f.core.list_meetings().unwrap().is_empty());
     assert!(f.host.loaded.lock().unwrap().is_empty());
+    // The window saw the start begin and end, so its own start comes back.
+    assert_eq!(f.host.statuses(), ["starting", "idle"]);
+    assert_eq!(f.core.recording_state(), dto::RecordingState::idle());
 
     // Not asked yet: start asks, and a refusal there also ends the start.
     let f = Fixture::new(&["small"], NEVER, |host| {

@@ -318,7 +318,8 @@ fn report_error(app: &AppHandle, action: Toggle, message: String) {
 }
 
 /// Shows the window, on the live meeting if one is recording or stopping.
-fn open_mneme(app: &AppHandle) {
+/// Open Mneme in the menu and a click on the Dock icon both come here.
+pub fn open_mneme(app: &AppHandle) {
     show_main_window(app);
     let live = core(app).and_then(|core| core.recording_state().meeting_id);
     if let Some(meeting_id) = live
@@ -343,7 +344,7 @@ pub fn show_main_window(app: &AppHandle) {
 /// The recording state changed or ticked: the host calls this with every
 /// state it sends to the window. Never blocks, whatever thread it is on.
 pub fn recording_state_changed(app: &AppHandle, state: &dto::RecordingState) {
-    if Phase::of(state, false) == Phase::Idle {
+    if Phase::of(state, state.starting) == Phase::Idle {
         // Start is on offer again: look at the models too.
         refresh(app);
     } else {
@@ -434,6 +435,7 @@ mod tests {
             elapsed_secs,
             model_id: Some("small".to_owned()),
             warning: None,
+            starting: false,
         }
     }
 

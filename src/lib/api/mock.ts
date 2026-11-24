@@ -11,7 +11,9 @@
 //   model sets it to null. `startMeeting` uses the default model, or any
 //   installed one when no default is set.
 // - The recording state is emitted on every change and once a second while
-//   recording.
+//   recording. A start first sends an idle state with `starting` set, as the
+//   backend does while the model loads; `mock.startFromOutside` keeps it
+//   there for a while.
 
 import {
   DEFAULT_INSTALLED_MODEL_ID,
@@ -101,6 +103,15 @@ export interface MockControls {
    * with none, nothing is sent.
    */
   emitOpenMeeting(meetingId?: string): void;
+  /**
+   * Starts a meeting as the menu bar or the global shortcut does: a
+   * `starting` state, the model load (`loadMs`, default 1500), then the
+   * recording. The window's own `startMeeting` is refused meanwhile. A start
+   * refused at once (no model, microphone denied) only emits a recording
+   * error; a `failNext("startMeeting")` fails it after the load, back to idle
+   * and with a recording error. Resolves when the start has settled.
+   */
+  startFromOutside(loadMs?: number): Promise<void>;
   /** Ids passed to `showInFinder` since the last reset, oldest first. */
   readonly revealedInFinder: readonly string[];
 }
@@ -180,6 +191,7 @@ const IDLE: RecordingState = {
   elapsedSecs: 0,
   modelId: null,
   warning: null,
+  starting: false,
 };
 
 /** What the backend says when system audio is known to be refused at the start. */
@@ -214,6 +226,8 @@ export function createMockApi(initialOptions: MockOptions = {}): MockApi {
   let nextDownloadFailure: string | null;
   let revealedInFinder: string[];
   let meetingCounter: number;
+  /** Counts resets, so a start still loading knows it was cancelled. */
+  let resets = 0;
   let tickTimer: ReturnType<typeof setInterval> | null = null;
   let stopTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -250,6 +264,7 @@ export function createMockApi(initialOptions: MockOptions = {}): MockApi {
 
   function init(options: MockOptions) {
     stopTimers();
+    resets += 1;
 
     now = options.now ?? (() => new Date());
     latencyMs = options.latencyMs ?? 0;
@@ -367,6 +382,62 @@ export function createMockApi(initialOptions: MockOptions = {}): MockApi {
     emitRecording();
   }
 
+  /** The checks of a start, then the `starting` state (not emitted yet). Returns the model to record with. */
+  function beginStart(): string {
+    if (recording.status !== "idle" || recording.starting) {
+      throw new Error("A meeting is already being recorded.");
+    }
+    const modelId =
+      settings.defaultModelId !== null && installed.has(settings.defaultModelId)
+        ? settings.defaultModelId
+        : firstInstalledModelId();
+    if (modelId === null) {
+      throw new Error(
+        "No transcription model is installed. Download one in Settings.",
+      );
+    }
+    if (resolvePermission("microphone") === "denied") {
+      throw new Error(
+        "Microphone access is denied. Allow Mneme in System Settings > Privacy & Security > Microphone.",
+      );
+    }
+    recording = { ...IDLE, modelId, starting: true };
+    recordingModelId = modelId;
+    return modelId;
+  }
+
+  /** The model has loaded: creates the meeting and starts recording it. */
+  function finishStart(modelId: string): Meeting {
+    // A denied system audio permission still records, with the microphone only.
+    const micOnly = resolvePermission("systemAudio") === "denied";
+
+    const start = now();
+    meetingCounter += 1;
+    const meeting = toRecord({
+      id: `mtg-new-${meetingCounter}`,
+      title: defaultMeetingTitle(start),
+      titleEdited: false,
+      startedAt: start.toISOString(),
+      durationSecs: null,
+      status: "recording",
+      notes: "",
+      transcript: [],
+    });
+    meetings.set(meeting.id, meeting);
+    recording = {
+      status: "recording",
+      meetingId: meeting.id,
+      elapsedSecs: 0,
+      modelId,
+      warning: micOnly ? MOCK_MIC_ONLY_WARNING : null,
+      starting: false,
+    };
+    recordingModelId = modelId;
+    tickTimer = setInterval(tick, tickMs);
+    emitRecording();
+    return toMeeting(meeting);
+  }
+
   function finishStop(meeting: MeetingRecord): Meeting {
     stopTimer = null;
     meeting.status = "complete";
@@ -441,51 +512,9 @@ export function createMockApi(initialOptions: MockOptions = {}): MockApi {
 
     startMeeting: () =>
       call("startMeeting", () => {
-        if (recording.status !== "idle") {
-          throw new Error("A meeting is already being recorded.");
-        }
-        const modelId =
-          settings.defaultModelId !== null &&
-          installed.has(settings.defaultModelId)
-            ? settings.defaultModelId
-            : firstInstalledModelId();
-        if (modelId === null) {
-          throw new Error(
-            "No transcription model is installed. Download one in Settings.",
-          );
-        }
-        if (resolvePermission("microphone") === "denied") {
-          throw new Error(
-            "Microphone access is denied. Allow Mneme in System Settings > Privacy & Security > Microphone.",
-          );
-        }
-        // A denied system audio permission still records, with the microphone only.
-        const micOnly = resolvePermission("systemAudio") === "denied";
-
-        const start = now();
-        meetingCounter += 1;
-        const meeting = toRecord({
-          id: `mtg-new-${meetingCounter}`,
-          title: defaultMeetingTitle(start),
-          titleEdited: false,
-          startedAt: start.toISOString(),
-          durationSecs: null,
-          status: "recording",
-          notes: "",
-          transcript: [],
-        });
-        meetings.set(meeting.id, meeting);
-        recording = {
-          status: "recording",
-          meetingId: meeting.id,
-          elapsedSecs: 0,
-          modelId,
-          warning: micOnly ? MOCK_MIC_ONLY_WARNING : null,
-        };
-        recordingModelId = modelId;
-        tickTimer = setInterval(tick, tickMs);
+        const modelId = beginStart();
         emitRecording();
-        return toMeeting(meeting);
+        return finishStart(modelId);
       }),
 
     stopMeeting: () =>
@@ -720,6 +749,35 @@ export function createMockApi(initialOptions: MockOptions = {}): MockApi {
     emitOpenMeeting(meetingId = recording.meetingId ?? undefined) {
       if (meetingId === undefined) return;
       for (const listener of [...openMeetingListeners]) listener(meetingId);
+    },
+    async startFromOutside(loadMs = 1500) {
+      const refuse = (message: string) => {
+        for (const listener of [...recordingErrorListeners]) {
+          listener({ action: "start", message });
+        }
+      };
+      let modelId: string;
+      try {
+        modelId = beginStart();
+      } catch (error) {
+        refuse(error instanceof Error ? error.message : String(error));
+        return;
+      }
+      emitRecording();
+      const startedIn = resets;
+      await sleep(loadMs);
+      // A reset while the model loaded ends this start.
+      if (startedIn !== resets) return;
+      const failure = failures.get("startMeeting");
+      if (failure !== undefined) {
+        failures.delete("startMeeting");
+        recording = { ...IDLE };
+        recordingModelId = null;
+        emitRecording();
+        refuse(failure);
+        return;
+      }
+      finishStart(modelId);
     },
     get revealedInFinder() {
       return [...revealedInFinder];

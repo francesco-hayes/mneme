@@ -33,6 +33,22 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Quiet, and on one line: the sentence is in the tooltip. */
+.warning {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+  margin-inline-start: var(--space-2);
+  color: var(--color-warning);
+  font-size: var(--text-small);
+  white-space: nowrap;
+}
+
+.warning > svg {
+  flex: none;
+}
+
 .error {
   margin-inline-start: var(--space-2);
 }

@@ -49,6 +49,7 @@ export const IDLE_RECORDING: RecordingState = {
   elapsedSecs: 0,
   modelId: null,
   warning: null,
+  starting: false,
 };
 
 export const RecordingContext = createContext<Recording | null>(null);

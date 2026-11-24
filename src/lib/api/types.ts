@@ -12,7 +12,7 @@ export interface TranscriptLine { t: string; speaker: 'Me' | 'Them'; text: strin
 export interface ModelInfo { id: string; name: string; sizeBytes: number; note: string; englishOnly: boolean; installed: boolean }
 export interface DownloadProgress { modelId: string; receivedBytes: number; totalBytes: number; state: 'downloading' | 'verifying' | 'done' | 'cancelled' | 'error'; error?: string }
 export interface Settings { defaultModelId: string | null; language: string; globalShortcut: string | null; spellcheck: boolean }
-export interface RecordingState { status: 'idle' | 'recording' | 'stopping'; meetingId: string | null; elapsedSecs: number; modelId: string | null; warning: string | null }
+export interface RecordingState { status: 'idle' | 'recording' | 'stopping'; meetingId: string | null; elapsedSecs: number; modelId: string | null; warning: string | null; starting: boolean }
 export interface Permissions { microphone: Permission; systemAudio: Permission }
 export interface RecordingError { action: 'start' | 'stop'; message: string }
 
