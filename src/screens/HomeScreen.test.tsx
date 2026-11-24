@@ -185,6 +185,191 @@ describe("the list", () => {
   });
 });
 
+describe("the ⋯ menu", () => {
+  beforeEach(() => resetMock());
+
+  const menuButton = (title: string) =>
+    screen.getByRole("button", { name: `Options for ${title}` });
+  const menuItem = (name: string | RegExp) =>
+    screen.getByRole("menuitem", { name });
+
+  test("every row has one, closed, holding View and Delete", async () => {
+    const user = userEvent.setup();
+    renderHome();
+    await findList();
+
+    for (const title of ["Standup", "Design review", "Kickoff"]) {
+      expect(menuButton(title)).toHaveAttribute("aria-expanded", "false");
+    }
+    expect(screen.queryByRole("menu")).toBeNull();
+
+    await user.click(menuButton("Standup"));
+    expect(menuButton("Standup")).toHaveAttribute("aria-expanded", "true");
+    const items = within(screen.getByRole("menu")).getAllByRole("menuitem");
+    expect(items.map((item) => item.textContent)).toEqual(["View", "Delete…"]);
+    expect(items[0]).toHaveFocus();
+  });
+
+  test("View opens the meeting", async () => {
+    const user = userEvent.setup();
+    renderShell();
+    await findList();
+
+    await user.click(menuButton("Design review"));
+    await user.click(menuItem("View"));
+
+    expect(await heading("Design review")).toBeInTheDocument();
+  });
+
+  const dialog = () => screen.getByRole("alertdialog");
+
+  test("Delete opens a dialog; Cancel leaves the meeting where it is", async () => {
+    const user = userEvent.setup();
+    const deleteMeeting = vi.spyOn(mockApi, "deleteMeeting");
+    renderHome();
+    await findList();
+
+    await user.click(menuButton("Standup"));
+    await user.click(menuItem("Delete…"));
+
+    expect(dialog()).toHaveAccessibleName("Move “Standup” to the Trash?");
+    expect(dialog()).toHaveAccessibleDescription(
+      "Its notes and transcript go with it. Put Back in Finder restores it.",
+    );
+    expect(dialog()).toHaveAttribute("aria-modal", "true");
+    const cancel = within(dialog()).getByRole("button", { name: "Cancel" });
+    expect(cancel).toHaveFocus();
+
+    await user.click(cancel);
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(menuButton("Standup")).toHaveFocus();
+    expect(deleteMeeting).not.toHaveBeenCalled();
+    expect(rows()).toHaveLength(4);
+  });
+
+  test("Escape closes the dialog; Tab stays inside it", async () => {
+    const user = userEvent.setup();
+    renderHome();
+    await findList();
+
+    await user.click(menuButton("Standup"));
+    await user.click(menuItem("Delete…"));
+    const cancel = within(dialog()).getByRole("button", { name: "Cancel" });
+    const confirm = within(dialog()).getByRole("button", {
+      name: "Move to Trash",
+    });
+
+    await user.tab();
+    expect(confirm).toHaveFocus();
+    await user.tab();
+    expect(cancel).toHaveFocus();
+    await user.tab({ shift: true });
+    expect(confirm).toHaveFocus();
+    // The list's arrow keys do not reach the rows behind it.
+    await user.keyboard("{ArrowDown}");
+    expect(confirm).toHaveFocus();
+
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(menuButton("Standup")).toHaveFocus();
+    expect(rows()).toHaveLength(4);
+  });
+
+  test("Move to Trash deletes the meeting and the list updates", async () => {
+    const user = userEvent.setup();
+    renderHome();
+    await findList();
+
+    await user.click(menuButton("Standup"));
+    await user.click(menuItem("Delete…"));
+    await user.click(screen.getByRole("button", { name: "Move to Trash" }));
+
+    await waitFor(() => expect(rows()).toHaveLength(3));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(rowTexts().join()).not.toContain("Standup");
+    expect((await mockApi.listMeetings()).map((m) => m.id)).not.toContain(
+      "standup",
+    );
+  });
+
+  test("a delete that fails says why in the dialog, which stays open", async () => {
+    const user = userEvent.setup();
+    mockApi.mock.failNext("deleteMeeting", "The Trash is not available.");
+    renderHome();
+    await findList();
+
+    await user.click(menuButton("Kickoff"));
+    await user.click(menuItem("Delete…"));
+    await user.click(screen.getByRole("button", { name: "Move to Trash" }));
+
+    expect(await within(dialog()).findByRole("alert")).toHaveTextContent(
+      "Could not delete the meeting: The Trash is not available.",
+    );
+    expect(rows()).toHaveLength(4);
+
+    // Trying again works.
+    await user.click(screen.getByRole("button", { name: "Move to Trash" }));
+    await waitFor(() => expect(rows()).toHaveLength(3));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+  });
+
+  test("Delete is disabled on the meeting being recorded", async () => {
+    const user = userEvent.setup();
+    resetMock({
+      meetings: [
+        meeting({
+          id: "live",
+          title: "Live one",
+          startedAt: "2026-11-12T19:55:00Z",
+          durationSecs: null,
+          status: "recording",
+        }),
+      ],
+    });
+    renderHome();
+    await findList();
+
+    await user.click(menuButton("Live one"));
+    expect(menuItem("Delete…")).toBeDisabled();
+    expect(menuItem("Delete…")).toHaveAttribute(
+      "title",
+      "Stop the recording before deleting this meeting.",
+    );
+  });
+
+  test("the keyboard moves through the menu and Escape closes it", async () => {
+    const user = userEvent.setup();
+    renderHome();
+    await findList();
+
+    menuButton("Standup").focus();
+    await user.keyboard("{ArrowDown}");
+    expect(menuItem("View")).toHaveFocus();
+    await user.keyboard("{ArrowDown}");
+    expect(menuItem("Delete…")).toHaveFocus();
+    // Stays in the menu: the list does not move to the next row.
+    await user.keyboard("{ArrowDown}");
+    expect(menuItem("Delete…")).toHaveFocus();
+    await user.keyboard("{ArrowUp}");
+    expect(menuItem("View")).toHaveFocus();
+
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(menuButton("Standup")).toHaveFocus();
+  });
+
+  test("a click elsewhere closes it", async () => {
+    const user = userEvent.setup();
+    renderHome();
+    await findList();
+
+    await user.click(menuButton("Standup"));
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+    await user.click(screen.getByRole("heading", { name: "Meetings" }));
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+});
+
 describe("states", () => {
   beforeEach(() => resetMock());
 

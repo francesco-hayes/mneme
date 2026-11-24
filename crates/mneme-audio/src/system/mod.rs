@@ -88,6 +88,10 @@
 mod format;
 #[cfg(target_os = "macos")]
 mod hal;
+
+/// The name of the private aggregate device a system audio capture creates.
+#[cfg(target_os = "macos")]
+pub(crate) use hal::OBJECT_NAME;
 #[cfg(target_os = "macos")]
 mod ioproc;
 #[cfg(target_os = "macos")]

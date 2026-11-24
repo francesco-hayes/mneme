@@ -1,0 +1,53 @@
+/* The button and, under it, its menu. */
+.menuButton {
+  position: relative;
+}
+
+.pressed {
+  background: var(--color-pressed);
+  color: var(--color-text);
+}
+
+/* Opens under the button, its right edge on the button's, over what follows. */
+.menu {
+  position: absolute;
+  top: calc(100% + var(--space-1));
+  right: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 140px;
+  padding: var(--space-1);
+  border: var(--hairline) solid var(--color-control-border);
+  border-radius: var(--radius-panel);
+  background: var(--color-popover);
+  box-shadow: var(--shadow-popover);
+}
+
+.item {
+  padding: 4px var(--space-2);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--color-text);
+  font-size: var(--text-body);
+  text-align: start;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.item:hover:not(:disabled),
+.item:focus-visible {
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  outline: none;
+}
+
+.item:disabled {
+  color: var(--color-text-secondary);
+  opacity: 0.6;
+}
+
+.danger:not(:disabled) {
+  color: var(--color-danger);
+}

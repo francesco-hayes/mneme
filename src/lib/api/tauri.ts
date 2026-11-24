@@ -8,6 +8,7 @@ import type {
   DownloadProgress,
   Meeting,
   MeetingSummary,
+  Microphone,
   ModelInfo,
   Permission,
   Permissions,
@@ -75,6 +76,7 @@ export const tauriApi: Api = {
   renameMeeting: (id, title) =>
     call<MeetingSummary>("rename_meeting", { id, title }),
   showInFinder: (id) => call<void>("show_in_finder", { id }),
+  deleteMeeting: (id) => call<void>("delete_meeting", { id }),
   getRecordingState: () => call<RecordingState>("get_recording_state"),
   onRecordingState: (cb) =>
     subscribe<RecordingState>(RECORDING_STATE_EVENT, cb),
@@ -89,6 +91,7 @@ export const tauriApi: Api = {
     subscribe<DownloadProgress>(DOWNLOAD_PROGRESS_EVENT, cb),
   getSettings: () => call<Settings>("get_settings"),
   updateSettings: (patch) => call<Settings>("update_settings", { patch }),
+  listMicrophones: () => call<Microphone[]>("list_microphones"),
   getPermissions: () => call<Permissions>("get_permissions"),
   requestPermission: (kind) => call<Permission>("request_permission", { kind }),
 };

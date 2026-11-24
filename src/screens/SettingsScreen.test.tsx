@@ -802,6 +802,99 @@ describe("with the mock's timers", () => {
   });
 });
 
+describe("microphone", () => {
+  const picker = () =>
+    screen.findByRole<HTMLSelectElement>("combobox", {
+      name: "Record my side with",
+    });
+  const optionNames = (select: HTMLSelectElement) =>
+    [...select.options].map((option) => option.textContent);
+
+  test("starts on the system default, named, and lists every microphone", async () => {
+    renderSettings();
+    const select = await picker();
+    await waitFor(() => expect(select.options).toHaveLength(4));
+    expect(optionNames(select)).toEqual([
+      "System default (MacBook Pro Microphone)",
+      "MacBook Pro Microphone",
+      "Shure MV7",
+      "Logitech StreamCam",
+    ]);
+    expect(select.value).toBe("");
+  });
+
+  test("choosing one saves its id, and the system default saves null", async () => {
+    renderSettings();
+    const select = await picker();
+    await waitFor(() => expect(select.options).toHaveLength(4));
+
+    await userEvent.selectOptions(select, "Shure MV7");
+    await waitFor(async () =>
+      expect((await savedSettings()).microphoneId).toBe(
+        "coreaudio:AppleUSBAudioEngine:Shure:MV7:1",
+      ),
+    );
+
+    await userEvent.selectOptions(
+      select,
+      "System default (MacBook Pro Microphone)",
+    );
+    await waitFor(async () =>
+      expect((await savedSettings()).microphoneId).toBeNull(),
+    );
+  });
+
+  test("a chosen microphone that is unplugged stays chosen, with a note", async () => {
+    renderSettings({
+      settings: { microphoneId: "coreaudio:AppleUSBAudioEngine:Shure:MV7:1" },
+      microphones: [
+        {
+          id: "coreaudio:BuiltInMicrophoneDevice",
+          name: "MacBook Pro Microphone",
+          isDefault: true,
+        },
+      ],
+    });
+    const select = await picker();
+    expect(
+      await screen.findByText(/That microphone is not connected/),
+    ).toBeVisible();
+    expect(select.selectedOptions[0].textContent).toBe("Unplugged microphone");
+  });
+
+  test("one plugged in while Settings is open is there when the menu opens", async () => {
+    renderSettings();
+    const select = await picker();
+    await waitFor(() => expect(select.options).toHaveLength(4));
+    mockApi.mock.setMicrophones([
+      {
+        id: "coreaudio:BuiltInMicrophoneDevice",
+        name: "MacBook Pro Microphone",
+        isDefault: true,
+      },
+      { id: "airpods", name: "AirPods Pro", isDefault: false },
+    ]);
+
+    fireEvent.mouseDown(select);
+
+    await waitFor(() => expect(optionNames(select)).toContain("AirPods Pro"));
+    expect(optionNames(select)).not.toContain("Shure MV7");
+  });
+
+  test("a list that cannot be read says so, and Retry reads it again", async () => {
+    mockApi.mock.failNext("listMicrophones", "Core Audio is not answering.");
+    renderSettings();
+    expect(
+      await screen.findByText(
+        "Could not list the microphones: Core Audio is not answering.",
+      ),
+    ).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "Retry" }));
+    const select = await picker();
+    await waitFor(() => expect(select.options).toHaveLength(4));
+  });
+});
+
 describe("spellcheck", () => {
   test("is off at first, and the switch saves each change", async () => {
     renderSettings();

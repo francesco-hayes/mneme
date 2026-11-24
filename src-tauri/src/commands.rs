@@ -86,6 +86,11 @@ pub async fn show_in_finder(state: State<'_, AppState>, id: String) -> CommandRe
 }
 
 #[tauri::command]
+pub async fn delete_meeting(state: State<'_, AppState>, id: String) -> CommandResult<()> {
+    run(state, move |core| core.delete_meeting(&id)).await
+}
+
+#[tauri::command]
 pub async fn get_recording_state(state: State<'_, AppState>) -> CommandResult<dto::RecordingState> {
     run(state, |core| Ok(core.recording_state())).await
 }
@@ -131,6 +136,11 @@ pub async fn update_settings(
         crate::shortcut::update_settings(&app, core, &patch)
     })
     .await
+}
+
+#[tauri::command]
+pub async fn list_microphones(state: State<'_, AppState>) -> CommandResult<Vec<dto::Microphone>> {
+    run(state, |core| Ok(core.list_microphones())).await
 }
 
 #[tauri::command]

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
   createMockApi,
   MOCK_MIC_ONLY_WARNING,
+  MOCK_MICROPHONES,
   mockOptionsFromSearch,
   mockScenarios,
   type MockOptions,
@@ -131,6 +132,25 @@ describe("meetings", () => {
     await api.showInFinder("mtg-standup");
     expect(api.mock.revealedInFinder).toEqual(["mtg-standup"]);
     await expect(api.showInFinder("nope")).rejects.toThrow("Meeting not found");
+  });
+
+  test("deleteMeeting removes a meeting, but not the one recording", async () => {
+    const api = create({ stopDelayMs: 0 });
+    await api.deleteMeeting("mtg-standup");
+    const ids = (await api.listMeetings()).map((m) => m.id);
+    expect(ids).not.toContain("mtg-standup");
+    await expect(api.getMeeting("mtg-standup")).rejects.toThrow(
+      "Meeting not found",
+    );
+    await expect(api.deleteMeeting("mtg-standup")).rejects.toThrow(
+      "Meeting not found",
+    );
+
+    const live = await api.startMeeting();
+    await expect(api.deleteMeeting(live.id)).rejects.toThrow("being recorded");
+    await api.stopMeeting();
+    await api.deleteMeeting(live.id);
+    expect((await api.listMeetings()).map((m) => m.id)).not.toContain(live.id);
   });
 
   test("putMeeting adds a meeting with a long generated transcript", async () => {
@@ -627,6 +647,7 @@ describe("settings and permissions", () => {
       language: "auto",
       globalShortcut: null,
       spellcheck: false,
+      microphoneId: null,
     });
   });
 
@@ -641,6 +662,7 @@ describe("settings and permissions", () => {
       language: "pt",
       globalShortcut: "CommandOrControl+Shift+R",
       spellcheck: false,
+      microphoneId: null,
     });
     expect(await api.getSettings()).toEqual(updated);
 
@@ -812,5 +834,22 @@ describe("recording warnings and open requests", () => {
     unsubscribe();
     api.mock.emitOpenMeeting();
     expect(opened).toHaveLength(2);
+  });
+});
+
+describe("microphones", () => {
+  test("the mock lists its microphones, and a change is seen at the next read", async () => {
+    const api = create();
+    const first = await api.listMicrophones();
+    expect(first.map((m) => m.name)).toEqual(
+      MOCK_MICROPHONES.map((m) => m.name),
+    );
+    expect(first.filter((m) => m.isDefault)).toHaveLength(1);
+
+    api.mock.setMicrophones([MOCK_MICROPHONES[0]]);
+    expect(await api.listMicrophones()).toHaveLength(1);
+
+    const saved = await api.updateSettings({ microphoneId: "usb" });
+    expect(saved.microphoneId).toBe("usb");
   });
 });

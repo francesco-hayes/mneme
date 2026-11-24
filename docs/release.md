@@ -241,6 +241,13 @@ Issues with no manual checks: 001, 005, 006, 007, 010 to 020, 026.
 - [ ] During a recording, Settings: only the model in use has Delete dimmed.
 - [ ] Start a meeting from the window and open the menu bar menu while the model loads: it reads "Starting…" and cannot be clicked.
 
+032 Choose the microphone
+
+- [ ] In Settings, the menu lists the Mac's real microphones by name, with the current default named in the first entry.
+- [ ] Choose a USB or headset mic, start a meeting, speak: Me lines come from that mic.
+- [ ] Unplug the chosen mic during a meeting: recording carries on with the default. Plug it back in: it moves back.
+- [ ] Plug a mic in while Settings is open, then open the menu: it is there.
+
 ### Signing and release
 
 025 Signing, notarization, local-only audit

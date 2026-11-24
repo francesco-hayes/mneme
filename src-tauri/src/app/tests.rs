@@ -86,7 +86,10 @@ struct TestHost {
     /// System Audio Recording permission.
     system_audio_refused: AtomicBool,
     revealed: Mutex<Vec<PathBuf>>,
+    trashed: Mutex<Vec<PathBuf>>,
     settings_opened: Mutex<Vec<PermissionKind>>,
+    /// The microphone each meeting's sources were made for.
+    microphones_asked: Mutex<Vec<Option<String>>>,
 }
 
 impl TestHost {
@@ -110,7 +113,9 @@ impl TestHost {
             system_audio_answer: None,
             system_audio_refused: AtomicBool::new(false),
             revealed: Mutex::default(),
+            trashed: Mutex::default(),
             settings_opened: Mutex::default(),
+            microphones_asked: Mutex::default(),
         }
     }
 
@@ -208,7 +213,11 @@ impl Host for TestHost {
         Ok(engine)
     }
 
-    fn sources(&self) -> Vec<Box<dyn AudioSource>> {
+    fn sources(&self, microphone: Option<&str>) -> Vec<Box<dyn AudioSource>> {
+        self.microphones_asked
+            .lock()
+            .unwrap()
+            .push(microphone.map(str::to_owned));
         let source = |speaker, burst_at_ms| {
             let samples = tape(burst_at_ms, self.tape_ms);
             Box::new(FakeSource::from_samples(speaker, samples).with_pacing(self.pacing))
@@ -218,6 +227,21 @@ impl Host for TestHost {
             return vec![source(Speaker::Me, 300), Box::new(RefusedSystemAudio)];
         }
         vec![source(Speaker::Me, 300), source(Speaker::Them, 500)]
+    }
+
+    fn microphones(&self) -> Vec<dto::Microphone> {
+        vec![
+            dto::Microphone {
+                id: "built-in".to_owned(),
+                name: "MacBook Pro Microphone".to_owned(),
+                is_default: true,
+            },
+            dto::Microphone {
+                id: "usb".to_owned(),
+                name: "USB Microphone".to_owned(),
+                is_default: false,
+            },
+        ]
     }
 
     fn recorder_options(&self) -> RecorderOptions {
@@ -246,6 +270,13 @@ impl Host for TestHost {
 
     fn reveal(&self, path: &Path) -> Result<()> {
         self.revealed.lock().unwrap().push(path.to_path_buf());
+        Ok(())
+    }
+
+    /// Removes the folder, as the Trash takes it out of the meetings root.
+    fn trash(&self, path: &Path) -> Result<()> {
+        std::fs::remove_dir_all(path).map_err(|e| e.to_string())?;
+        self.trashed.lock().unwrap().push(path.to_path_buf());
         Ok(())
     }
 
@@ -716,6 +747,44 @@ fn notes_title_and_finder_work_on_a_meeting_that_is_not_recording() {
 }
 
 #[test]
+fn a_meeting_is_deleted_to_the_trash_but_not_while_it_records() {
+    let f = Fixture::new(&["small"], NEVER, |_| {});
+    let first = f.core.start_meeting().unwrap().summary.id;
+    f.core.stop_meeting().unwrap();
+    let second = f.core.start_meeting().unwrap().summary.id;
+
+    assert_eq!(
+        f.core.delete_meeting(&second).unwrap_err(),
+        "This meeting is being recorded. Stop the recording before deleting it."
+    );
+    assert_eq!(f.core.list_meetings().unwrap().len(), 2);
+    assert!(f.host.trashed.lock().unwrap().is_empty());
+
+    let folder = PathBuf::from(f.core.get_meeting(&first).unwrap().folder_path);
+    f.core.delete_meeting(&first).unwrap();
+    assert_eq!(
+        *f.host.trashed.lock().unwrap(),
+        std::slice::from_ref(&folder)
+    );
+    assert!(!folder.exists());
+    let left: Vec<_> = f
+        .core
+        .list_meetings()
+        .unwrap()
+        .into_iter()
+        .map(|m| m.id)
+        .collect();
+    assert_eq!(left, std::slice::from_ref(&second));
+    assert!(f.core.get_meeting(&first).is_err());
+    assert!(f.core.delete_meeting(&first).is_err());
+
+    // Once stopped, the second one can go too.
+    f.core.stop_meeting().unwrap();
+    f.core.delete_meeting(&second).unwrap();
+    assert!(f.core.list_meetings().unwrap().is_empty());
+}
+
+#[test]
 fn settings_are_checked_and_on_disk_when_the_update_returns() {
     let f = Fixture::new(&["small"], NEVER, |_| {});
     assert_eq!(f.core.get_settings().default_model_id, None);
@@ -1083,4 +1152,32 @@ fn shutdown_during_a_warm_up_waits_for_it_and_drops_what_it_loaded() {
     shutdown.join().unwrap();
     assert!(!f.host.engine_is_alive());
     assert_eq!(f.warm_id(), None);
+}
+
+#[test]
+fn a_meeting_records_the_chosen_microphone_and_the_list_comes_from_the_host() {
+    let f = Fixture::new(&["small"], NEVER, |_| {});
+    let names: Vec<_> = f
+        .core
+        .list_microphones()
+        .into_iter()
+        .map(|m| m.name)
+        .collect();
+    assert_eq!(names, ["MacBook Pro Microphone", "USB Microphone"]);
+
+    f.core.start_meeting().unwrap();
+    f.core.stop_meeting().unwrap();
+    f.core
+        .update_settings(&SettingsPatch {
+            microphone_id: Patch::Set("usb".to_owned()),
+            ..SettingsPatch::default()
+        })
+        .unwrap();
+    f.core.start_meeting().unwrap();
+    f.core.stop_meeting().unwrap();
+
+    assert_eq!(
+        *f.host.microphones_asked.lock().unwrap(),
+        [None, Some("usb".to_owned())]
+    );
 }

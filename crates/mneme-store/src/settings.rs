@@ -14,6 +14,7 @@
 //!   "globalShortcut": "CmdOrCtrl+Shift+M",
 //!   "language": "en",
 //!   "meetingsRoot": "/Users/ana/Notes/Meetings",
+//!   "microphoneId": "coreaudio:BuiltInMicrophoneDevice",
 //!   "spellcheck": true
 //! }
 //! ```
@@ -21,7 +22,7 @@
 //! The file holds only what was set. A key that is missing, `null` or an
 //! empty string means "not set", and the setting has its default: no default
 //! model, language `en`, no shortcut, the meetings root the app passed in,
-//! spellcheck off.
+//! the system default microphone, spellcheck off.
 //! The default root is never written to the file, so it follows the app (a
 //! home folder that moved, say) until the user picks a root of their own.
 //!
@@ -83,6 +84,7 @@ const KEY_LANGUAGE: &str = "language";
 const KEY_GLOBAL_SHORTCUT: &str = "globalShortcut";
 const KEY_MEETINGS_ROOT: &str = "meetingsRoot";
 const KEY_SPELLCHECK: &str = "spellcheck";
+const KEY_MICROPHONE_ID: &str = "microphoneId";
 
 /// How many names are tried for a file moved aside: `.bad`, then `.bad.2`
 /// to `.bad.999`.
@@ -91,8 +93,8 @@ const MAX_BAD_FILES: u32 = 999;
 /// The settings in effect.
 ///
 /// Serializes with the field names of the frontend contract
-/// (`defaultModelId`, `language`, `globalShortcut`, `spellcheck`) plus
-/// `meetingsRoot`, which the contract does not have.
+/// (`defaultModelId`, `language`, `globalShortcut`, `spellcheck`,
+/// `microphoneId`) plus `meetingsRoot`, which the contract does not have.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Settings {
@@ -112,6 +114,10 @@ pub struct Settings {
     pub meetings_root: PathBuf,
     /// Whether the notes editor marks misspelled words. Off by default.
     pub spellcheck: bool,
+    /// The id of the input device to record as Me, or `None` for the
+    /// system default. Any text: a device that is not connected is stood
+    /// in for by the default when a meeting records.
+    pub microphone_id: Option<String>,
 }
 
 /// What a [`SettingsPatch`] does to one setting.
@@ -127,7 +133,7 @@ pub enum Patch<T> {
     #[default]
     Keep,
     /// Back to "not set": no default model, no shortcut, language `en`,
-    /// the default meetings root, spellcheck off.
+    /// the default meetings root, spellcheck off, the default microphone.
     Clear,
     /// Set it to this value.
     Set(T),
@@ -177,6 +183,8 @@ pub struct SettingsPatch {
     pub meetings_root: Patch<PathBuf>,
     #[serde(default)]
     pub spellcheck: Patch<bool>,
+    #[serde(default)]
+    pub microphone_id: Patch<String>,
 }
 
 /// Something [`SettingsStore::open`] found wrong with the file. None of
@@ -480,6 +488,7 @@ fn read_settings(
         global_shortcut: text_of(document, KEY_GLOBAL_SHORTCUT, true, warnings),
         meetings_root,
         spellcheck: bool_of(document, KEY_SPELLCHECK, warnings).unwrap_or(false),
+        microphone_id: text_of(document, KEY_MICROPHONE_ID, true, warnings),
     }
 }
 
@@ -576,6 +585,7 @@ fn apply(document: &mut Map<String, Value>, patch: &SettingsPatch) -> Result<()>
     put(KEY_LANGUAGE, trimmed(&patch.language));
     put(KEY_GLOBAL_SHORTCUT, trimmed(&patch.global_shortcut));
     put(KEY_MEETINGS_ROOT, meetings_root);
+    put(KEY_MICROPHONE_ID, trimmed(&patch.microphone_id));
     match patch.spellcheck {
         Patch::Keep => {}
         Patch::Clear => {

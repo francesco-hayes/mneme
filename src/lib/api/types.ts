@@ -11,9 +11,10 @@ export interface Meeting extends MeetingSummary { notes: string; transcriptLineC
 export interface TranscriptLine { t: string; speaker: 'Me' | 'Them'; text: string }
 export interface ModelInfo { id: string; name: string; sizeBytes: number; note: string; englishOnly: boolean; installed: boolean }
 export interface DownloadProgress { modelId: string; receivedBytes: number; totalBytes: number; state: 'downloading' | 'verifying' | 'done' | 'cancelled' | 'error'; error?: string }
-export interface Settings { defaultModelId: string | null; language: string; globalShortcut: string | null; spellcheck: boolean }
+export interface Settings { defaultModelId: string | null; language: string; globalShortcut: string | null; spellcheck: boolean; microphoneId: string | null }
 export interface RecordingState { status: 'idle' | 'recording' | 'stopping'; meetingId: string | null; elapsedSecs: number; modelId: string | null; warning: string | null; starting: boolean }
 export interface Permissions { microphone: Permission; systemAudio: Permission }
+export interface Microphone { id: string; name: string; isDefault: boolean }
 export interface RecordingError { action: 'start' | 'stop'; message: string }
 
 export interface Api {
@@ -25,6 +26,7 @@ export interface Api {
   saveNotes(id: string, notes: string): Promise<void>;
   renameMeeting(id: string, title: string): Promise<MeetingSummary>;
   showInFinder(id: string): Promise<void>;
+  deleteMeeting(id: string): Promise<void>;
   getRecordingState(): Promise<RecordingState>;
   onRecordingState(cb: (s: RecordingState) => void): () => void;
   onRecordingError(cb: (e: RecordingError) => void): () => void;
@@ -36,6 +38,7 @@ export interface Api {
   onDownloadProgress(cb: (p: DownloadProgress) => void): () => void;
   getSettings(): Promise<Settings>;
   updateSettings(patch: Partial<Settings>): Promise<Settings>;
+  listMicrophones(): Promise<Microphone[]>;
   getPermissions(): Promise<Permissions>;
   requestPermission(kind: 'microphone' | 'systemAudio'): Promise<Permission>;
 }

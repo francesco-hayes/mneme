@@ -117,6 +117,7 @@ pub fn run() {
             commands::save_notes,
             commands::rename_meeting,
             commands::show_in_finder,
+            commands::delete_meeting,
             commands::get_recording_state,
             commands::list_models,
             commands::download_model,
@@ -124,6 +125,7 @@ pub fn run() {
             commands::delete_model,
             commands::get_settings,
             commands::update_settings,
+            commands::list_microphones,
             commands::get_permissions,
             commands::request_permission,
         ])

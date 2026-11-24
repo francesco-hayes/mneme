@@ -161,6 +161,25 @@ impl RecordingState {
     }
 }
 
+/// An input device that can record Me.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Microphone {
+    pub id: String,
+    pub name: String,
+    pub is_default: bool,
+}
+
+impl From<mneme_audio::InputDevice> for Microphone {
+    fn from(device: mneme_audio::InputDevice) -> Self {
+        Self {
+            id: device.id,
+            name: device.name,
+            is_default: device.is_default,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Permissions {

@@ -56,7 +56,7 @@ pub use convert::{StreamResampler, ToF32};
 pub use error::AudioError;
 pub use fake::{FakeSource, Pacing};
 pub use framer::{FRAME_MS, FRAME_SAMPLES, Framer};
-pub use mic::MicSource;
+pub use mic::{InputDevice, MicSource, input_devices};
 pub use permission::{
     PermissionStatus, microphone_permission_status, request_microphone_permission,
     request_system_audio_permission, system_audio_permission_status,

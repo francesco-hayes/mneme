@@ -62,6 +62,7 @@ describe("loading", () => {
       language: "auto",
       globalShortcut: null,
       spellcheck: false,
+      microphoneId: null,
     });
   });
 

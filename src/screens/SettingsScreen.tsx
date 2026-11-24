@@ -3,14 +3,15 @@ import { Group, GroupRow, InlineError, Screen, Section } from "../components";
 import type { Settings } from "../lib/api";
 import { cx } from "../lib/cx";
 import { useModelLibrary } from "../state/modelLibrary";
+import { MicrophoneSection } from "./settings/MicrophoneSection";
 import { ModelsSection } from "./settings/ModelsSection";
 import { ShortcutRecorder } from "./settings/ShortcutRecorder";
 import { useSettingSaver } from "./settings/useSettingSaver";
 import styles from "./SettingsScreen.module.css";
 
 /**
- * Settings: the transcription models and which one is the default, spellcheck
- * in the notes, and the global shortcut. Everything is saved as it is changed. The models, settings
+ * Settings: the transcription models and which one is the default, the
+ * microphone, spellcheck in the notes, and the global shortcut. Everything is saved as it is changed. The models, settings
  * and downloads live in the model library, so the screen shows a download
  * exactly where it stands each time it is opened.
  */
@@ -47,11 +48,14 @@ function SettingsContent({ settings }: { settings: Settings }) {
   );
   const shortcut = useSettingSaver("globalShortcut", settings.globalShortcut);
   const spellcheck = useSettingSaver("spellcheck", settings.spellcheck);
+  const microphone = useSettingSaver("microphoneId", settings.microphoneId);
   const spellcheckLabel = useId();
 
   return (
     <>
       <ModelsSection defaultModel={defaultModel} />
+
+      <MicrophoneSection microphone={microphone} />
 
       <Section title="Notes">
         <Group>

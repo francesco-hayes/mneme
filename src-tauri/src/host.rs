@@ -79,11 +79,18 @@ impl Host for TauriHost {
         Ok(Arc::new(engine))
     }
 
-    fn sources(&self) -> Vec<Box<dyn AudioSource>> {
+    fn sources(&self, microphone: Option<&str>) -> Vec<Box<dyn AudioSource>> {
         vec![
-            Box::new(MicSource::new()),
+            Box::new(MicSource::with_device(microphone.map(str::to_owned))),
             Box::new(SystemAudioSource::new()),
         ]
+    }
+
+    fn microphones(&self) -> Vec<dto::Microphone> {
+        mneme_audio::input_devices()
+            .into_iter()
+            .map(Into::into)
+            .collect()
     }
 
     fn microphone_permission(&self) -> PermissionStatus {
@@ -106,7 +113,37 @@ impl Host for TauriHost {
         open(&["-R".as_ref(), path.as_os_str()])
     }
 
+    fn trash(&self, path: &Path) -> Result<()> {
+        move_to_trash(path)
+    }
+
     fn open_privacy_settings(&self, kind: PermissionKind) -> Result<()> {
         open(&[kind.settings_url().as_ref()])
     }
+}
+
+/// Moves `path` to the user's Trash with `NSFileManager`, as Finder's Move
+/// to Trash does: Put Back works on it afterwards. Local only; nothing is
+/// sent anywhere.
+#[cfg(target_os = "macos")]
+fn move_to_trash(path: &Path) -> Result<()> {
+    use objc2_foundation::{NSFileManager, NSString, NSURL};
+
+    let path_str = path
+        .to_str()
+        .ok_or_else(|| format!("The folder name of {} is not valid text.", path.display()))?;
+    let url = NSURL::fileURLWithPath(&NSString::from_str(path_str));
+    NSFileManager::defaultManager()
+        .trashItemAtURL_resultingItemURL_error(&url, None)
+        .map_err(|error| {
+            format!(
+                "Could not move the meeting to the Trash: {}",
+                error.localizedDescription()
+            )
+        })
+}
+
+#[cfg(not(target_os = "macos"))]
+fn move_to_trash(_path: &Path) -> Result<()> {
+    Err("Moving to the Trash is only supported on macOS.".to_owned())
 }

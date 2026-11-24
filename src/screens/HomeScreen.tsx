@@ -9,11 +9,14 @@ import {
 } from "react";
 import {
   Button,
+  ConfirmDialog,
   EmptyState,
   focusListRow,
   InlineError,
   List,
   ListRow,
+  MenuButton,
+  MoreIcon,
   Screen,
 } from "../components";
 import { api, type MeetingSummary } from "../lib/api";
@@ -217,6 +220,7 @@ export function HomeScreen({
               meetings={meetings.data.list}
               dates={dates}
               onOpen={openMeeting}
+              onDeleted={reloadMeetings}
               listRef={listRef}
             />
           </>
@@ -229,6 +233,8 @@ interface MeetingListProps {
   meetings: readonly MeetingSummary[];
   dates: DateContext;
   onOpen: (meetingId: string) => void;
+  /** A meeting was moved to the Trash: read the list again. */
+  onDeleted: () => void;
   listRef: RefObject<HTMLUListElement | null>;
 }
 
@@ -240,31 +246,111 @@ const MeetingList = memo(function MeetingList({
   meetings,
   dates,
   onOpen,
+  onDeleted,
   listRef,
 }: MeetingListProps) {
   return (
     <List aria-label="Meetings" ref={listRef}>
       {newestFirst(meetings).map((meeting) => (
-        <ListRow
+        <MeetingRow
           key={meeting.id}
-          title={meeting.title}
-          detail={<MeetingDetail meeting={meeting} dates={dates} />}
-          meta={
-            meeting.status === "recording" ? (
-              <span className={styles.live}>
-                <span className={styles.liveDot} aria-hidden="true" />
-                Recording
-              </span>
-            ) : (
-              (formatDuration(meeting.durationSecs, dates.locale) ?? undefined)
-            )
-          }
-          onActivate={() => onOpen(meeting.id)}
+          meeting={meeting}
+          dates={dates}
+          onOpen={onOpen}
+          onDeleted={onDeleted}
         />
       ))}
     </List>
   );
 });
+
+interface MeetingRowProps {
+  meeting: MeetingSummary;
+  dates: DateContext;
+  onOpen: (meetingId: string) => void;
+  onDeleted: () => void;
+}
+
+/**
+ * One meeting: it opens on a click, and its ⋯ menu has View and Delete.
+ * Delete asks in a dialog first, then moves the meeting to the Trash.
+ */
+function MeetingRow({ meeting, dates, onOpen, onDeleted }: MeetingRowProps) {
+  const [asking, setAsking] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const recording = meeting.status === "recording";
+
+  function closeQuestion() {
+    setAsking(false);
+    setError(null);
+  }
+
+  async function confirmDelete() {
+    setDeleting(true);
+    setError(null);
+    try {
+      await api.deleteMeeting(meeting.id);
+      setAsking(false);
+      onDeleted();
+    } catch (failure) {
+      setError(`Could not delete the meeting: ${errorMessage(failure)}`);
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  return (
+    <>
+      <ListRow
+        title={meeting.title}
+        detail={<MeetingDetail meeting={meeting} dates={dates} />}
+        meta={
+          recording ? (
+            <span className={styles.live}>
+              <span className={styles.liveDot} aria-hidden="true" />
+              Recording
+            </span>
+          ) : (
+            (formatDuration(meeting.durationSecs, dates.locale) ?? undefined)
+          )
+        }
+        onActivate={() => onOpen(meeting.id)}
+        trailing={
+          <MenuButton
+            label={`Options for ${meeting.title}`}
+            icon={<MoreIcon />}
+            items={[
+              { label: "View", onSelect: () => onOpen(meeting.id) },
+              {
+                label: "Delete…",
+                danger: true,
+                disabled: recording,
+                title: recording
+                  ? "Stop the recording before deleting this meeting."
+                  : undefined,
+                onSelect: () => setAsking(true),
+              },
+            ]}
+          />
+        }
+      />
+      {asking && (
+        <ConfirmDialog
+          title={`Move “${meeting.title}” to the Trash?`}
+          message="Its notes and transcript go with it. Put Back in Finder restores it."
+          confirmLabel="Move to Trash"
+          busyLabel="Moving…"
+          danger
+          busy={deleting}
+          error={error}
+          onConfirm={() => void confirmDelete()}
+          onCancel={closeQuestion}
+        />
+      )}
+    </>
+  );
+}
 
 /** The second line of a row: when it started, and whether it was cut short. */
 function MeetingDetail({

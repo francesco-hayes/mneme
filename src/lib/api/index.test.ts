@@ -47,7 +47,7 @@ async function loadTauriApi(): Promise<Api> {
 test("every method of the Tauri implementation calls its backend command", async () => {
   const tauriApi = await loadTauriApi();
   const methods = Object.keys(tauriApi) as (keyof Api)[];
-  expect(methods).toHaveLength(21);
+  expect(methods).toHaveLength(23);
 
   invoke.mockResolvedValue("result");
   const calls: [Promise<unknown>, string, Record<string, unknown>?][] = [
@@ -63,6 +63,7 @@ test("every method of the Tauri implementation calls its backend command", async
       { id: "m1", title: "T" },
     ],
     [tauriApi.showInFinder("m1"), "show_in_finder", { id: "m1" }],
+    [tauriApi.deleteMeeting("m1"), "delete_meeting", { id: "m1" }],
     [tauriApi.getRecordingState(), "get_recording_state"],
     [tauriApi.listModels(), "list_models"],
     [tauriApi.downloadModel("base"), "download_model", { id: "base" }],
@@ -74,6 +75,7 @@ test("every method of the Tauri implementation calls its backend command", async
       "update_settings",
       { patch: { defaultModelId: null } },
     ],
+    [tauriApi.listMicrophones(), "list_microphones"],
     [tauriApi.getPermissions(), "get_permissions"],
     [
       tauriApi.requestPermission("systemAudio"),

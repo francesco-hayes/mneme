@@ -28,6 +28,11 @@ mneme-transcribe = { path = "../crates/mneme-transcribe" }
 mneme-store = { path = "../crates/mneme-store" }
 mneme-pipeline = { path = "../crates/mneme-pipeline" }
 
+# Move to Trash for a deleted meeting (NSFileManager). Already in the tree
+# through mneme-audio and Tauri; only these three classes are turned on.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSError", "NSFileManager", "NSString", "NSURL"] }
+
 [dev-dependencies]
 serde_json = { workspace = true }
 # Temp folders for the app data dir, Documents and the models.

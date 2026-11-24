@@ -80,8 +80,11 @@ pub trait Host: Send + Sync + 'static {
     fn download_progress(&self, progress: &dto::DownloadProgress);
     /// Loads the model file. Slow (seconds); never called on the UI thread.
     fn load_transcriber(&self, model_path: &Path) -> Result<Arc<dyn Transcriber>>;
-    /// The sources of one meeting, microphone first.
-    fn sources(&self) -> Vec<Box<dyn AudioSource>>;
+    /// The sources of one meeting, microphone first. `microphone` is the
+    /// chosen input device's id, or `None` for the system default.
+    fn sources(&self, microphone: Option<&str>) -> Vec<Box<dyn AudioSource>>;
+    /// The input devices connected now.
+    fn microphones(&self) -> Vec<dto::Microphone>;
     fn recorder_options(&self) -> RecorderOptions {
         RecorderOptions::default()
     }
@@ -94,6 +97,8 @@ pub trait Host: Send + Sync + 'static {
     fn request_system_audio_permission(&self) -> Option<PermissionStatus>;
     /// Shows a file or folder in Finder.
     fn reveal(&self, path: &Path) -> Result<()>;
+    /// Moves a file or folder to the Trash, where the user can put it back.
+    fn trash(&self, path: &Path) -> Result<()>;
     /// Opens the pane of System Settings where the permission is changed.
     fn open_privacy_settings(&self, kind: PermissionKind) -> Result<()>;
     /// A start began loading its model. The window has been sent an idle
@@ -395,6 +400,26 @@ impl AppCore {
         self.host.reveal(&meeting.folder)
     }
 
+    /// Moves a meeting's folder, with its notes and transcript, to the
+    /// Trash. Refused while that meeting is being recorded or stopped: its
+    /// files are still being written.
+    pub fn delete_meeting(&self, id: &str) -> Result<()> {
+        let id = MeetingId::from(id);
+        // Held across the move so the meeting cannot start being stopped
+        // (or anything else) while its folder goes. A new start never
+        // touches an existing folder.
+        let recording = self.recording();
+        if recording.live().is_some_and(|live| live.meeting_id == id) {
+            return Err(
+                "This meeting is being recorded. Stop the recording before deleting it.".to_owned(),
+            );
+        }
+        let meeting = self.store().meeting(&id).map_err(msg)?;
+        self.host.trash(&meeting.folder)?;
+        drop(recording);
+        Ok(())
+    }
+
     // ---- Recording ----
 
     pub fn recording_state(&self) -> dto::RecordingState {
@@ -513,8 +538,9 @@ impl AppCore {
                 let mut config = SessionConfig::new(Language::english());
                 config.audio_dir = Some(meeting.folder.clone());
                 config.recorder = self.host.recorder_options();
-                Session::start(self.host.sources(), Arc::clone(&engine), writer, config)
-                    .map_err(msg)
+                let microphone = self.settings.get().microphone_id;
+                let sources = self.host.sources(microphone.as_deref());
+                Session::start(sources, Arc::clone(&engine), writer, config).map_err(msg)
             });
         match started {
             Ok(session) => Ok((
@@ -985,6 +1011,14 @@ impl AppCore {
             }
         }
         Ok(after)
+    }
+
+    // ---- Microphones ----
+
+    /// The input devices connected now. The chosen one (in the settings)
+    /// may not be among them; a meeting then records the default.
+    pub fn list_microphones(&self) -> Vec<dto::Microphone> {
+        self.host.microphones()
     }
 
     // ---- Permissions ----

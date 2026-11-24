@@ -96,7 +96,7 @@ In the browser, pick a starting point with the query string:
 | `/?mock=long-transcript` | The default plus a meeting with a 2,000-line transcript |
 | `&mockLatency=300`       | Any of the above, with every call delayed by 300 ms     |
 
-While the dev server runs, the controls are also on `__mnemeMock` in the browser console, for example `__mnemeMock.setInstalledModels([])`, `__mnemeMock.failNextDownload()`, `__mnemeMock.emitRecordingError("start")`, `__mnemeMock.emitOpenMeeting()` or `__mnemeMock.startFromOutside()` (a start from the menu bar, with its model load).
+While the dev server runs, the controls are also on `__mnemeMock` in the browser console, for example `__mnemeMock.setInstalledModels([])`, `__mnemeMock.failNextDownload()`, `__mnemeMock.emitRecordingError("start")`, `__mnemeMock.emitOpenMeeting()` or `__mnemeMock.startFromOutside()` (a start from the menu bar, with its model load) or `__mnemeMock.setMicrophones([...])`.
 
 In tests, import the same instance the app uses and drive it through `mock`. The test setup resets it after every test.
 

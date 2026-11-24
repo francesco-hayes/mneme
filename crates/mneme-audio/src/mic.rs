@@ -1,5 +1,7 @@
-//! The microphone source: the system default input device through `cpal`,
-//! labeled [`Speaker::Me`].
+//! The microphone source: an input device through `cpal`, labeled
+//! [`Speaker::Me`]. By default the system default input device; or one
+//! chosen by its id (see [`input_devices`] and [`MicSource::with_device`]),
+//! with the default standing in while the chosen one is not connected.
 //!
 //! The stream is opened in the device's own format (whatever rate, channel
 //! count and sample format it currently runs at) and converted here. Asking
@@ -9,10 +11,11 @@
 //! # Device changes
 //!
 //! The capture thread (see [`crate::capture`]) re-opens the stream on the
-//! current default input device when:
+//! device to use now (the chosen one if connected, else the default) when:
 //!
-//! - the default input device changes (checked twice a second; cpal's Core
-//!   Audio backend only follows default *output* changes by itself);
+//! - that device changes: the default changed, or the chosen device was
+//!   plugged in or out (checked twice a second; cpal's Core Audio backend
+//!   only follows default *output* changes by itself);
 //! - cpal reports a stream error, such as the device being unplugged or its
 //!   sample rate being changed in Audio MIDI Setup;
 //! - the stream delivers nothing for three seconds.
@@ -36,7 +39,64 @@ use crate::capture::{Backend, Capture, OpenStream, StreamEvents, Timing, make_re
 use crate::convert::{ToF32, i24_to_f32};
 use crate::permission::{PermissionStatus, microphone_permission_status};
 use crate::source::SourceState;
+#[cfg(target_os = "macos")]
+use crate::system::OBJECT_NAME as SYSTEM_AUDIO_DEVICE_NAME;
+/// No system audio device elsewhere: nothing to leave out.
+#[cfg(not(target_os = "macos"))]
+const SYSTEM_AUDIO_DEVICE_NAME: &str = "";
 use crate::{AudioError, AudioSource, FrameSender};
+
+/// An input device the microphone can be set to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InputDevice {
+    /// Stable across launches and reconnections: the Core Audio UID where
+    /// available. What [`MicSource::with_device`] takes.
+    pub id: String,
+    /// The name macOS shows, such as "MacBook Pro Microphone".
+    pub name: String,
+    /// The system default input device right now.
+    pub is_default: bool,
+}
+
+/// The input devices connected now, in the order Core Audio lists them.
+/// Empty when there are none or they cannot be listed. Needs no permission
+/// and opens nothing. Mneme's own system audio device is left out.
+pub fn input_devices() -> Vec<InputDevice> {
+    let host = cpal::default_host();
+    let default = host.default_input_device().map(|d| device_identity(&d));
+    let Ok(devices) = host.input_devices() else {
+        return Vec::new();
+    };
+    let mut list: Vec<InputDevice> = Vec::new();
+    for device in devices {
+        let id = device_identity(&device);
+        let name = device
+            .description()
+            .map(|d| d.name().to_owned())
+            .unwrap_or_else(|_| device.to_string());
+        if name == SYSTEM_AUDIO_DEVICE_NAME || list.iter().any(|d| d.id == id) {
+            continue;
+        }
+        list.push(InputDevice {
+            is_default: default.as_deref() == Some(id.as_str()),
+            id,
+            name,
+        });
+    }
+    list
+}
+
+/// Which device to record: the chosen one if it is connected, otherwise
+/// the default.
+fn device_to_use(
+    chosen: Option<&str>,
+    connected: impl IntoIterator<Item = String>,
+    default: Option<String>,
+) -> Option<String> {
+    chosen
+        .and_then(|id| connected.into_iter().find(|c| c == id))
+        .or(default)
+}
 
 /// Captures the system default microphone as [`Speaker::Me`] frames.
 ///
@@ -49,6 +109,8 @@ use crate::{AudioError, AudioSource, FrameSender};
 pub struct MicSource {
     state: Arc<SourceState>,
     capture: Option<Capture>,
+    /// The id of the chosen input device, or `None` for the default.
+    device: Option<String>,
 }
 
 impl MicSource {
@@ -56,6 +118,17 @@ impl MicSource {
     /// until [`start`](AudioSource::start).
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Creates a source for the input device with this id (an
+    /// [`InputDevice::id`]), or the default for `None`. While that device is
+    /// not connected the default is recorded instead, and the source moves
+    /// to the chosen one when it is plugged in.
+    pub fn with_device(device: Option<String>) -> Self {
+        Self {
+            device,
+            ..Self::default()
+        }
     }
 }
 
@@ -91,10 +164,12 @@ impl AudioSource for MicSource {
             PermissionStatus::Granted | PermissionStatus::NotDetermined => {}
         }
 
+        let chosen = self.device.clone();
         self.capture = Some(Capture::start(
             "mneme-mic",
-            || CpalBackend {
+            move || CpalBackend {
                 host: cpal::default_host(),
+                chosen,
             },
             Speaker::Me,
             start,
@@ -122,22 +197,44 @@ impl AudioSource for MicSource {
 
 struct CpalBackend {
     host: cpal::Host,
+    /// The chosen device's id, or `None` for the default.
+    chosen: Option<String>,
+}
+
+impl CpalBackend {
+    /// The device to record now: the chosen one if connected, else the
+    /// default.
+    fn device(&self) -> Option<cpal::Device> {
+        let default = self.host.default_input_device();
+        let Some(chosen) = self.chosen.as_deref() else {
+            return default;
+        };
+        let connected: Vec<cpal::Device> = self
+            .host
+            .input_devices()
+            .map(Iterator::collect)
+            .unwrap_or_default();
+        let id = device_to_use(
+            Some(chosen),
+            connected.iter().map(device_identity),
+            default.as_ref().map(device_identity),
+        )?;
+        connected
+            .into_iter()
+            .find(|d| device_identity(d) == id)
+            .or(default)
+    }
 }
 
 impl Backend for CpalBackend {
     type Stream = cpal::Stream;
 
     fn current_device(&mut self) -> Option<String> {
-        self.host
-            .default_input_device()
-            .map(|d| device_identity(&d))
+        self.device().map(|d| device_identity(&d))
     }
 
     fn open(&mut self, events: StreamEvents) -> Result<OpenStream<cpal::Stream>, AudioError> {
-        let device = self
-            .host
-            .default_input_device()
-            .ok_or(AudioError::NoInputDevice)?;
+        let device = self.device().ok_or(AudioError::NoInputDevice)?;
         let identity = device_identity(&device);
         let supported = device.default_input_config().map_err(open_error)?;
         let config = supported.config();
@@ -287,6 +384,7 @@ mod tests {
     fn the_default_input_device_can_be_described() {
         let mut backend = CpalBackend {
             host: cpal::default_host(),
+            chosen: None,
         };
         let Some(identity) = backend.current_device() else {
             println!("no default input device");
@@ -313,6 +411,47 @@ mod tests {
                 Framer::new(Speaker::Me, Instant::now(), tx, config.sample_rate(), 1).unwrap();
             }
             Err(err) => println!("default input {identity} has no usable format: {err}"),
+        }
+    }
+
+    #[test]
+    fn the_chosen_device_is_used_while_connected_and_the_default_otherwise() {
+        let connected = || ["built-in".to_owned(), "usb".to_owned()];
+        let default = || Some("built-in".to_owned());
+        assert_eq!(
+            device_to_use(Some("usb"), connected(), default()).as_deref(),
+            Some("usb")
+        );
+        assert_eq!(
+            device_to_use(Some("headset"), connected(), default()).as_deref(),
+            Some("built-in")
+        );
+        assert_eq!(
+            device_to_use(None, connected(), default()).as_deref(),
+            Some("built-in")
+        );
+        assert_eq!(device_to_use(Some("headset"), connected(), None), None);
+    }
+
+    /// Lists the real devices: nothing is opened and no prompt is shown.
+    #[test]
+    fn input_devices_are_listed_with_at_most_one_default() {
+        let devices = input_devices();
+        println!("{devices:#?}");
+        assert!(devices.iter().filter(|d| d.is_default).count() <= 1);
+        assert!(
+            devices
+                .iter()
+                .all(|d| !d.id.is_empty() && !d.name.is_empty())
+        );
+        assert!(devices.iter().all(|d| d.name != SYSTEM_AUDIO_DEVICE_NAME));
+        // A chosen device that is connected is the one the backend opens.
+        if let Some(first) = devices.first() {
+            let mut backend = CpalBackend {
+                host: cpal::default_host(),
+                chosen: Some(first.id.clone()),
+            };
+            assert_eq!(backend.current_device().as_deref(), Some(first.id.as_str()));
         }
     }
 

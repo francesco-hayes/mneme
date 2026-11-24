@@ -32,6 +32,7 @@ import type {
   DownloadProgress,
   Meeting,
   MeetingSummary,
+  Microphone,
   ModelInfo,
   Permission,
   Permissions,
@@ -43,6 +44,25 @@ import type {
 
 export type PermissionKind = keyof Permissions;
 
+/** The input devices the mock starts with: the built-in one is the default. */
+export const MOCK_MICROPHONES: readonly Microphone[] = [
+  {
+    id: "coreaudio:BuiltInMicrophoneDevice",
+    name: "MacBook Pro Microphone",
+    isDefault: true,
+  },
+  {
+    id: "coreaudio:AppleUSBAudioEngine:Shure:MV7:1",
+    name: "Shure MV7",
+    isDefault: false,
+  },
+  {
+    id: "coreaudio:AppleUSBAudioEngine:Logitech:StreamCam:2",
+    name: "Logitech StreamCam",
+    isDefault: false,
+  },
+];
+
 export interface MockOptions {
   /** The clock: seed dates are relative to it and new meetings start at it. Default: the real time. */
   now?: () => Date;
@@ -50,8 +70,10 @@ export interface MockOptions {
   meetings?: MockMeetingSeed[] | ((now: Date) => MockMeetingSeed[]);
   /** Ids of installed models. Default: one model. Pass `[]` for "none installed". */
   installedModelIds?: string[];
-  /** Merged over `{ defaultModelId: <first installed or null>, language: "auto", globalShortcut: null, spellcheck: false }`. */
+  /** Merged over `{ defaultModelId: <first installed or null>, language: "auto", globalShortcut: null, spellcheck: false, microphoneId: null }`. */
   settings?: Partial<Settings>;
+  /** The connected input devices. Default: `MOCK_MICROPHONES`. */
+  microphones?: Microphone[];
   /** Merged over both permissions granted. */
   permissions?: Partial<Permissions>;
   /** What the simulated system prompt answers for an undetermined permission. Default: granted. */
@@ -86,6 +108,8 @@ export interface MockControls {
   /** The "none installed" versus "one installed" switch: sets exactly which models are installed. */
   setInstalledModels(ids: string[]): void;
   setPermission(kind: PermissionKind, value: Permission): void;
+  /** Replaces the connected input devices, as plugging one in or out does. */
+  setMicrophones(microphones: Microphone[]): void;
   /** Adds a meeting, or replaces the one with the same id. */
   putMeeting(meeting: MockMeetingSeed): void;
   /** Makes the next call to `method` fail with `message`. Subscriptions (`on…`) cannot fail. */
@@ -225,6 +249,7 @@ export function createMockApi(initialOptions: MockOptions = {}): MockApi {
   let failures: Map<keyof Api, string>;
   let nextDownloadFailure: string | null;
   let revealedInFinder: string[];
+  let microphones: Microphone[];
   let meetingCounter: number;
   /** Counts resets, so a start still loading knows it was cancelled. */
   let resets = 0;
@@ -294,8 +319,12 @@ export function createMockApi(initialOptions: MockOptions = {}): MockApi {
       language: "auto",
       globalShortcut: null,
       spellcheck: false,
+      microphoneId: null,
       ...options.settings,
     };
+    microphones = (options.microphones ?? MOCK_MICROPHONES).map((m) => ({
+      ...m,
+    }));
     permissions = {
       microphone: "granted",
       systemAudio: "granted",
@@ -569,6 +598,17 @@ export function createMockApi(initialOptions: MockOptions = {}): MockApi {
         revealedInFinder.push(record(id).id);
       }),
 
+    deleteMeeting: (id) =>
+      call("deleteMeeting", () => {
+        record(id);
+        if (recording.status !== "idle" && recording.meetingId === id) {
+          throw new Error(
+            "This meeting is being recorded. Stop the recording before deleting it.",
+          );
+        }
+        meetings.delete(id);
+      }),
+
     getRecordingState: () =>
       call("getRecordingState", () => ({ ...recording })),
 
@@ -702,6 +742,9 @@ export function createMockApi(initialOptions: MockOptions = {}): MockApi {
         return { ...settings };
       }),
 
+    listMicrophones: () =>
+      call("listMicrophones", () => microphones.map((m) => ({ ...m }))),
+
     getPermissions: () => call("getPermissions", () => ({ ...permissions })),
 
     // An undetermined permission gets the simulated prompt's answer. A denied
@@ -726,6 +769,9 @@ export function createMockApi(initialOptions: MockOptions = {}): MockApi {
     },
     setPermission(kind, value) {
       permissions = { ...permissions, [kind]: value };
+    },
+    setMicrophones(list) {
+      microphones = list.map((m) => ({ ...m }));
     },
     putMeeting(meeting) {
       meetings.set(meeting.id, toRecord(meeting));

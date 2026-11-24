@@ -42,6 +42,7 @@ fn defaults() -> Settings {
         global_shortcut: None,
         meetings_root: PathBuf::from(DEFAULT_ROOT),
         spellcheck: false,
+        microphone_id: None,
     }
 }
 
@@ -119,6 +120,7 @@ fn a_patch_that_changes_nothing_writes_nothing() {
             global_shortcut: set(""),
             meetings_root: Patch::Clear,
             spellcheck: Patch::Keep,
+            microphone_id: Patch::Keep,
         })
         .unwrap();
 
@@ -152,6 +154,7 @@ fn the_file_uses_the_names_of_the_frontend_contract() {
             global_shortcut: set("CmdOrCtrl+Shift+M"),
             meetings_root: Patch::Set(PathBuf::from("/Users/ana/Notes/Meetings")),
             spellcheck: Patch::Set(true),
+            microphone_id: set("coreaudio:BuiltInMicrophoneDevice"),
         })
         .unwrap();
 
@@ -161,6 +164,7 @@ fn the_file_uses_the_names_of_the_frontend_contract() {
         "globalShortcut": "CmdOrCtrl+Shift+M",
         "meetingsRoot": "/Users/ana/Notes/Meetings",
         "spellcheck": true,
+        "microphoneId": "coreaudio:BuiltInMicrophoneDevice",
     });
     assert_eq!(json_of(&path), expected);
     // What a Tauri command returns to the frontend has the same names.
@@ -173,6 +177,7 @@ fn the_file_uses_the_names_of_the_frontend_contract() {
             "globalShortcut": null,
             "meetingsRoot": DEFAULT_ROOT,
             "spellcheck": false,
+            "microphoneId": null,
         })
     );
 
@@ -183,7 +188,7 @@ fn the_file_uses_the_names_of_the_frontend_contract() {
         text,
         serde_json::to_string_pretty(&json_of(&path)).unwrap() + "\n"
     );
-    assert_eq!(text.lines().count(), 7, "{text}");
+    assert_eq!(text.lines().count(), 8, "{text}");
     assert!(text.contains("\n  \"language\": \"en\""), "{text}");
     assert_eq!(names_in(dir.path()), [SETTINGS_FILE]);
 }
@@ -289,6 +294,7 @@ fn keep_clear_and_set_are_three_different_things() {
         global_shortcut: set("Alt+Space"),
         meetings_root: Patch::Set(PathBuf::from("/Volumes/Work/Meetings")),
         spellcheck: Patch::Keep,
+        microphone_id: Patch::Keep,
     };
     let after_all_set = store.update(&all_set).unwrap();
     assert_eq!(after_all_set.global_shortcut.as_deref(), Some("Alt+Space"));
@@ -397,6 +403,7 @@ fn a_patch_from_the_frontend_tells_null_from_absent() {
             global_shortcut: set("F5"),
             meetings_root: Patch::Set(PathBuf::from("/Volumes/Work")),
             spellcheck: Patch::Keep,
+            microphone_id: Patch::Keep,
         }
     );
     assert_eq!(
@@ -407,6 +414,7 @@ fn a_patch_from_the_frontend_tells_null_from_absent() {
             global_shortcut: Patch::Keep,
             meetings_root: Patch::Clear,
             spellcheck: Patch::Keep,
+            microphone_id: Patch::Keep,
         }
     );
 
@@ -530,6 +538,7 @@ fn values_survive_a_reopen() {
             global_shortcut: set("CmdOrCtrl+Shift+M"),
             meetings_root: Patch::Set(PathBuf::from("/Volumes/Work/Réunions")),
             spellcheck: Patch::Keep,
+            microphone_id: Patch::Keep,
         })
         .unwrap();
 
@@ -544,6 +553,7 @@ fn values_survive_a_reopen() {
             global_shortcut: Some("CmdOrCtrl+Shift+M".to_owned()),
             meetings_root: PathBuf::from("/Volumes/Work/Réunions"),
             spellcheck: false,
+            microphone_id: None,
         }
     );
 
@@ -803,6 +813,7 @@ fn one_bad_value_costs_only_that_setting_and_stays_in_the_file() {
             global_shortcut: Some("Alt+Space".to_owned()),
             meetings_root: PathBuf::from("/Volumes/Work/Meetings"),
             spellcheck: false,
+            microphone_id: None,
         }
     );
     match warnings.as_slice() {
@@ -1366,9 +1377,38 @@ fn updates_from_several_threads_are_all_kept() {
         global_shortcut: Some(format!("2-{last}")),
         meetings_root: PathBuf::from(format!("/roots/3-{last}")),
         spellcheck: false,
+        microphone_id: None,
     };
     assert_eq!(store.get(), expected);
     assert_eq!(open_clean(&path).get(), expected);
     assert_eq!(json_of(&path)["theme"], json!("dark"));
     assert_eq!(names_in(dir.path()), [SETTINGS_FILE]);
+}
+
+#[test]
+fn the_microphone_is_the_default_until_one_is_chosen() {
+    let (_dir, path) = data_dir();
+    let store = open_clean(&path);
+    assert_eq!(store.get().microphone_id, None);
+
+    let chosen = store
+        .update(&SettingsPatch {
+            microphone_id: set("  coreaudio:BuiltInMicrophoneDevice "),
+            ..SettingsPatch::default()
+        })
+        .unwrap();
+    assert_eq!(
+        chosen.microphone_id.as_deref(),
+        Some("coreaudio:BuiltInMicrophoneDevice")
+    );
+    assert_eq!(
+        json_of(&path),
+        json!({ "microphoneId": "coreaudio:BuiltInMicrophoneDevice" })
+    );
+    assert_eq!(open_clean(&path).get(), chosen);
+
+    // `null` from the frontend is back to the system default.
+    let sent: SettingsPatch = serde_json::from_str(r#"{"microphoneId": null}"#).unwrap();
+    assert_eq!(store.update(&sent).unwrap(), defaults());
+    assert_eq!(json_of(&path), json!({}));
 }

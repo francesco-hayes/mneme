@@ -66,6 +66,24 @@ export function TrashIcon() {
   );
 }
 
+/** Three dots in a row: a menu of more actions. */
+export function MoreIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="currentColor"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <circle cx="3.5" cy="8" r="1.25" />
+      <circle cx="8" cy="8" r="1.25" />
+      <circle cx="12.5" cy="8" r="1.25" />
+    </svg>
+  );
+}
+
 export function PlusIcon() {
   return (
     <Icon>
