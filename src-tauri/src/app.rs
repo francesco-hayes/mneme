@@ -757,13 +757,18 @@ impl AppCore {
             }
         }
         let summary = live.session.stop_or_give_up(CALL_LIMIT);
-        report_stuck(&live.meeting_id, &summary);
+        if report_stuck(&live.meeting_id, &summary) {
+            // The engine is stuck in a call: the next meeting must not get
+            // it from the warm cache. It loads a fresh one.
+            self.forget_warm(&engine);
+        }
         // The session's reference to the engine is gone once it has
-        // returned, so this frees the model. If the session gave up on a
-        // stuck transcriber call, the thread stuck in it still holds the
-        // engine: it is freed if that call ever returns, and if the app
-        // quits first, whisper.cpp aborts the process at exit (issue 005).
-        // The meeting is closed and its transcript sorted before that.
+        // returned; the warm cache usually keeps the model for the next
+        // meeting. If the session gave up on a stuck transcriber call, the
+        // thread stuck in it still holds the engine: it is freed if that
+        // call ever returns, and if the app quits first, whisper.cpp aborts
+        // the process at exit (issue 005). The meeting is closed and its
+        // transcript sorted before that.
         drop(engine);
         let result = self.close_meeting(&live, &summary);
         // Idle only now: a `getMeeting` right after the idle state must see
@@ -791,6 +796,17 @@ impl AppCore {
         }
         let meeting = live.store.load_meeting(id).map_err(msg)?;
         Ok(dto::Meeting::from_store(&meeting, false))
+    }
+
+    /// Drops this engine from the warm cache, if it is the one there.
+    fn forget_warm(&self, engine: &Arc<dyn Transcriber>) {
+        let mut warm = self.warm();
+        let same = |(_, cached): &mut (String, Arc<dyn Transcriber>)| {
+            std::ptr::addr_eq(Arc::as_ptr(cached), Arc::as_ptr(engine))
+        };
+        let forgotten = warm.engine.take_if(same);
+        drop(warm);
+        drop(forgotten);
     }
 
     /// Called when the app is about to exit: refuses new recordings and
@@ -1084,13 +1100,14 @@ fn open_store(root: &Path) -> Result<Arc<Store>> {
 }
 
 /// Logs a transcriber call that Stop gave up on, and what was lost with it.
-fn report_stuck(id: &MeetingId, summary: &SessionSummary) {
+/// Returns whether there was one.
+fn report_stuck(id: &MeetingId, summary: &SessionSummary) -> bool {
     let Some(stuck) = summary
         .dropped
         .iter()
         .find(|chunk| chunk.reason == mneme_pipeline::DropReason::TranscriberStuck)
     else {
-        return;
+        return false;
     };
     let lost_ms: u64 = summary
         .dropped
@@ -1114,6 +1131,7 @@ fn report_stuck(id: &MeetingId, summary: &SessionSummary) {
         lost_ms,
         summary.lines
     ));
+    true
 }
 
 /// Logs what went wrong in a session. The contract has no place for it.

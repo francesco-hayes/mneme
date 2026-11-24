@@ -34,6 +34,9 @@ Statuses: `todo`, `in progress`, `done`, `blocked`, `paused` (stopped part-way o
 | [025](025-signing-and-release.md) | Signing, notarization, local-only audit | 06 | release | 021 | done | open |
 | [027](027-show-recording-errors.md) | Show start and stop errors from outside the window | 06 | ui | 022, 023 | done | open |
 | [028](028-spellcheck-and-recording-fixes.md) | Spellcheck setting, mic-only warning, Open Mneme, Delete lock, Starting… | 05, 06 | several | 024, 027 | done | open |
+| [029](029-stop-timeout-chunk-retry-disk-check.md) | Stop limit on a stuck transcriber, chunk retry and gap line, disk check | 02, 03, 06 | pipeline, transcribe, app | 028 | done | open |
+| [030](030-warm-model.md) | Keep the Whisper model warm between meetings | 06 | app | 028 | done | open |
+| [031](031-028-leftovers.md) | Mic only in the recording bar, Starting… on Home, Dock to live meeting | 05, 06 | ui, app | 028 | done | open |
 
 ## Lanes
 

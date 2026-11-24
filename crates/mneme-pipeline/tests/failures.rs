@@ -389,7 +389,7 @@ fn the_gap_line_round_trips_through_the_store_in_time_order() {
                 language: None,
             })
             .unwrap();
-        // Them's chunk at 0.3 s is transcribed; Me's at 1.8 s fails twice.
+        // One chunk is transcribed; the other fails twice and becomes a gap.
         let fake = Arc::new(
             FakeTranscriber::new()
                 .then_text("Hello.")
@@ -418,13 +418,15 @@ fn the_gap_line_round_trips_through_the_store_in_time_order() {
             .iter()
             .map(|l| (l.timestamp_ms, l.speaker, l.text.as_str()))
             .collect();
-        assert_eq!(
-            lines,
-            [
-                (0, Speaker::Them, "Hello."),
-                (1_000, Speaker::Me, NOT_TRANSCRIBED)
-            ]
-        );
+        // The two chunks reach the transcriber at about the same moment, so
+        // either may be the one that gets the text; the other is the gap.
+        // Either way the lines are in time order, one of each.
+        let (them, me) = if lines[0].2 == "Hello." {
+            ("Hello.", NOT_TRANSCRIBED)
+        } else {
+            (NOT_TRANSCRIBED, "Hello.")
+        };
+        assert_eq!(lines, [(0, Speaker::Them, them), (1_000, Speaker::Me, me)]);
         let file = std::fs::read_to_string(
             store
                 .meeting(&meeting.id)
@@ -434,7 +436,7 @@ fn the_gap_line_round_trips_through_the_store_in_time_order() {
         )
         .unwrap();
         assert!(
-            file == "[00:00:00] Them: Hello.\n[00:00:01] Me: [not transcribed]\n",
+            file == format!("[00:00:00] Them: {them}\n[00:00:01] Me: {me}\n"),
             "{file:?}"
         );
     });

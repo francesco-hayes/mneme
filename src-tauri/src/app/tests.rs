@@ -939,8 +939,10 @@ fn stop_gives_up_on_a_transcriber_call_that_never_returns_and_closes_the_meeting
         [vec![MeetingStatus::Complete]]
     );
 
-    // Only the thread stuck in the call still holds the engine; it lets go
-    // once the call returns.
+    // Only the thread stuck in the call still holds the engine: the warm
+    // cache let go of it, so the next meeting cannot get it. It goes once
+    // the call returns.
+    assert_eq!(f.warm_id(), None);
     assert!(f.host.engine_is_alive());
     hold.release();
     f.wait_for("the stuck thread to drop the engine", || {
@@ -949,8 +951,10 @@ fn stop_gives_up_on_a_transcriber_call_that_never_returns_and_closes_the_meeting
     // It wrote nothing more.
     assert_eq!(f.core.get_transcript(&id).unwrap(), transcript);
 
-    // A new meeting starts as usual.
+    // A new meeting starts as usual, with a fresh engine.
+    let loads = f.host.loaded.lock().unwrap().len();
     f.core.start_meeting().unwrap();
+    assert_eq!(f.host.loaded.lock().unwrap().len(), loads + 1);
     f.core.stop_meeting().unwrap();
 }
 
@@ -1030,8 +1034,9 @@ fn a_start_during_the_warm_up_waits_for_it_and_the_model_loads_once() {
     let core = Arc::clone(&f.core);
     let start = thread::spawn(move || core.start_meeting());
     f.wait_for("the start to begin", || f.core.is_starting());
-    // The start waits without holding the recording lock.
-    assert_eq!(f.core.recording_state(), dto::RecordingState::idle());
+    // The start waits without holding the recording lock, and says so.
+    let state = f.core.recording_state();
+    assert_eq!((state.status, state.starting), ("idle", true));
     assert_eq!(f.core.start_meeting().unwrap_err(), ALREADY_RECORDING);
 
     open_gate.send(()).unwrap();

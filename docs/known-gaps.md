@@ -28,13 +28,18 @@ What that report does not tell us, because the details were not recorded: whethe
 | A meetings folder synced from another Mac                         | Recovery assumes one running copy per folder                                                 | 013       |
 | Hiding a transcript's last line when its final newline is missing | Follows the crash-detection rule; one-place change to relax                                  | 011       |
 
-## Fixed on 2026-11-24 (issue 028, not yet seen in the real app)
+## Fixed on 2026-11-24 (issues 028–031, not yet seen in the real app)
 
 - Spellcheck is a setting (Settings, Notes, Check spelling), off by default. Autocorrect stays off.
 - A meeting that records the microphone only says so above the notes.
 - Open Mneme in the menu bar goes to the live meeting.
 - Only the model in use is locked from Delete during a recording.
 - The menu reads "Starting…", disabled, while a meeting loads its model.
+- Stop always returns: a transcriber call stuck for 120 s is given up, and what was transcribed is kept (029).
+- A chunk that fails is retried once, then marked as a gap in the transcript (029).
+- A model download is refused up front when the disk is too full (029).
+- New meeting no longer waits for the model to load: it is kept warm between meetings (030).
+- "Mic only" shows in the recording bar on every screen; Home's New meeting reads "Starting…" while any start loads; the Dock icon goes to the live meeting (031).
 
 ## Unfinished work
 
@@ -54,9 +59,10 @@ What that report does not tell us, because the details were not recorded: whethe
 
 - whisper-rs is slow-moving: one maintainer, last release 2026-03, ten whisper.cpp versions behind. It is pinned and isolated in one file.
 - A `WhisperEngine` alive at process exit aborts the process; the app drops it on quit, but any new code path that keeps one alive will crash on exit.
-- First load of a model takes about 7 s longer while Metal compiles shaders. The model is loaded per meeting.
-- A transcription call that never returns hangs Stop. Failed chunks are not retried.
-- No disk-space check before a model download.
+- The model is now kept loaded between meetings (030), using 0.1–1.6 GB of memory for as long as the app runs. Whether the warm-up hides the ~7 s first-load shader delay was not measured.
+- A transcriber call stuck for over 120 s is given up at Stop (029), but nothing can kill the thread stuck in it. It keeps that engine alive: if Mneme quits before the call returns, whisper.cpp aborts the process at exit (the meeting is already saved by then). A new meeting loads a fresh engine meanwhile.
+- A chunk that fails twice is written as `[not transcribed]` in the transcript (029); the transcript pane shows it as plain text.
+- The disk-space check before a download (029) ignores other downloads running at the same time and APFS purgeable space, so it may refuse when Finder shows enough room.
 
 ### Storage
 
@@ -67,7 +73,6 @@ What that report does not tell us, because the details were not recorded: whethe
 ### UI
 
 - A download row disappears if the window reloads mid-download, until the next progress event.
-- The mic-only warning (issue 028) shows on the live meeting only, not on Home or Settings during a meeting.
 - Quitting after the first-run download but before Finish skips the permissions step next time.
 - Focus is not moved when the first-run step changes; no screen reader was used anywhere.
 - Shortcut keys show US-layout labels.
@@ -76,15 +81,15 @@ What that report does not tell us, because the details were not recorded: whethe
 
 ### App
 
-- Quit can block the main thread for up to about 10 s while a recording stops.
+- Quit can block the main thread while a recording stops: about 10 s of grace, plus up to 120 s if a transcriber call is stuck, plus a model load that is under way.
 - The command layer (`commands.rs`, `host.rs`) has no tests of its own; the core logic under it does.
 - `startedAt` carries the local offset, not `Z` as the mock does.
 
 ### Menu bar, shortcut, permissions (022–024)
 
 - None of the three has been seen or triggered: no tray icon on screen, no key press, no permission prompt.
-- Clicking the Dock icon shows the window but does not go to the live meeting; the menu's Open Mneme does (028).
-- While a start from the menu bar or shortcut loads its model, the window's New meeting is still enabled and is refused if pressed.
+- The Dock icon goes to the live meeting on every click during a recording (031), even when the window already shows another screen.
+- A warm-up asked for during a meeting (the default model changed mid-meeting, say) runs only after the meeting ends.
 - A model deleted in Settings is noticed by the menu only on the next hover or click.
 - macOS may not refuse a shortcut that is already in use, so a reserved combination may show no error. A saved shortcut that fails to register at launch is only logged.
 - System audio reads "undetermined" until a recording settles it. A prompt refused at first run stays "undetermined" until a meeting is refused; if macOS does not block the start while its prompt is open, the first meeting may read "denied" early.
