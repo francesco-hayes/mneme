@@ -750,6 +750,56 @@ fn notes_title_and_finder_work_on_a_meeting_that_is_not_recording() {
 }
 
 #[test]
+fn meetings_start_in_and_move_between_collections() {
+    let f = Fixture::new(&["small"], NEVER, |_| {});
+    assert_eq!(f.core.create_collection("Acme").unwrap(), "Acme");
+    assert_eq!(f.core.list_collections().unwrap(), ["Acme"]);
+
+    let started = f.core.start_meeting_in(Some("Acme")).unwrap();
+    assert_eq!(started.summary.collection.as_deref(), Some("Acme"));
+    let id = started.summary.id.clone();
+
+    // Not while it records, from here or by renaming its collection.
+    assert_eq!(
+        f.core.move_meeting(&id, None).unwrap_err(),
+        "This meeting is being recorded. Stop the recording before moving it."
+    );
+    assert!(f.core.rename_collection("Acme", "Acme Corp").is_err());
+    assert!(f.core.delete_collection("Acme").is_err());
+    assert!(f.host.trashed.lock().unwrap().is_empty());
+
+    let stopped = f.core.stop_meeting().unwrap();
+    assert_eq!(stopped.summary.collection.as_deref(), Some("Acme"));
+
+    let moved = f.core.move_meeting(&id, None).unwrap();
+    assert_eq!(moved.collection, None);
+    assert_eq!(f.core.list_meetings().unwrap()[0].collection, None);
+
+    let moved = f.core.move_meeting(&id, Some("Acme")).unwrap();
+    assert_eq!(moved.collection.as_deref(), Some("Acme"));
+    assert_eq!(
+        f.core.rename_collection("Acme", "Acme Corp").unwrap(),
+        "Acme Corp"
+    );
+    assert_eq!(
+        f.core
+            .get_meeting(&id)
+            .unwrap()
+            .summary
+            .collection
+            .as_deref(),
+        Some("Acme Corp")
+    );
+    assert!(f.core.start_meeting_in(Some("Gone")).is_err());
+    assert_eq!(f.core.recording_state().status, "idle");
+
+    f.core.delete_collection("Acme Corp").unwrap();
+    assert_eq!(f.host.trashed.lock().unwrap().len(), 1);
+    assert!(f.core.list_meetings().unwrap().is_empty());
+    assert!(f.core.list_collections().unwrap().is_empty());
+}
+
+#[test]
 fn a_meeting_is_deleted_to_the_trash_but_not_while_it_records() {
     let f = Fixture::new(&["small"], NEVER, |_| {});
     let first = f.core.start_meeting().unwrap().summary.id;

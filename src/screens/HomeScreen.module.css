@@ -25,6 +25,10 @@
   color: var(--color-warning);
 }
 
+.collection {
+  color: var(--color-text-tertiary);
+}
+
 .live {
   display: inline-flex;
   align-items: center;

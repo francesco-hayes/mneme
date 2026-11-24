@@ -1,5 +1,7 @@
 import {
+  Fragment,
   memo,
+  type ReactNode,
   type RefObject,
   useCallback,
   useEffect,
@@ -33,6 +35,20 @@ import { useWindowEvent } from "../lib/useWindowEvent";
 import { useNavigation } from "../state/navigation";
 import { useRecording } from "../state/recording";
 import styles from "./HomeScreen.module.css";
+import {
+  DeleteFolderDialog,
+  FolderBar,
+  FolderNameDialog,
+  MoveMeetingDialog,
+} from "./home/folders";
+import {
+  ALL,
+  collectionOf,
+  type FolderView,
+  inView,
+  rememberedFolder,
+  rememberFolder,
+} from "./home/folderView";
 
 export interface HomeScreenProps {
   /**
@@ -53,9 +69,10 @@ const isTextEntry = (target: EventTarget | null) =>
   (target.isContentEditable || target.matches("input, textarea, select"));
 
 /**
- * Home: every meeting, newest first, and the button that starts a new one.
- * The list is read again each time Home is shown, when a recording starts or
- * stops, and when the window gets focus back.
+ * Home: the meetings, newest first, and the button that starts a new one.
+ * The folder bar narrows the list to one folder, and New meeting starts the
+ * meeting in that folder. The list is read again each time Home is shown,
+ * when a recording starts or stops, and when the window gets focus back.
  */
 export function HomeScreen({
   now = systemNow,
@@ -67,12 +84,34 @@ export function HomeScreen({
 
   // "Today" is judged against the moment the list was read.
   const loadMeetings = useCallback(async () => {
-    const list = await api.listMeetings();
-    return { list, loadedAt: now() };
+    const [list, collections] = await Promise.all([
+      api.listMeetings(),
+      api.listCollections(),
+    ]);
+    return { list, collections, loadedAt: now() };
   }, [now]);
   const meetings = useLoad(loadMeetings);
   const models = useLoad(loadModels);
   const reloadMeetings = meetings.reload;
+
+  // The folder being shown. One that is gone (renamed or removed in Finder)
+  // falls back to All.
+  const [chosenView, setChosenView] = useState<FolderView>(rememberedFolder);
+  const collections =
+    meetings.status === "ready" ? meetings.data.collections : null;
+  const view: FolderView =
+    chosenView.kind === "collection" &&
+    collections !== null &&
+    !collections.includes(chosenView.name)
+      ? ALL
+      : chosenView;
+  const chooseView = useCallback((next: FolderView) => {
+    rememberFolder(next);
+    setChosenView(next);
+  }, []);
+  const [folderDialog, setFolderDialog] = useState<
+    "new" | "rename" | "delete" | null
+  >(null);
 
   // A recording that starts adds a meeting and one that stops gives it a
   // duration, wherever it was started or stopped from.
@@ -104,7 +143,7 @@ export function HomeScreen({
     setStarting(true);
     setStartError(null);
     try {
-      const meeting = await api.startMeeting();
+      const meeting = await api.startMeeting(collectionOf(view));
       navigate({ name: "meeting", meetingId: meeting.id });
     } catch (error) {
       setStartError(errorMessage(error));
@@ -160,6 +199,32 @@ export function HomeScreen({
       : loading
         ? "A meeting is starting."
         : undefined;
+  const shown =
+    meetings.status === "ready"
+      ? meetings.data.list.filter((meeting) => inView(view, meeting.collection))
+      : [];
+  const folderName = collectionOf(view);
+  const folderMenu = folderName !== null && (
+    <MenuButton
+      label={`Options for the folder ${folderName}`}
+      icon={<MoreIcon />}
+      items={[
+        { label: "Rename…", onSelect: () => setFolderDialog("rename") },
+        {
+          label: "Delete…",
+          danger: true,
+          onSelect: () => setFolderDialog("delete"),
+        },
+      ]}
+    />
+  );
+  const title =
+    view.kind === "collection"
+      ? view.name
+      : view.kind === "unfiled"
+        ? "Unfiled"
+        : "Meetings";
+
   const newMeetingButton = (variant: "primary" | "default") => (
     <Button
       variant={variant}
@@ -181,7 +246,15 @@ export function HomeScreen({
   );
 
   return (
-    <Screen title="Meetings" actions={newMeetingButton("primary")}>
+    <Screen
+      title={title}
+      actions={
+        <>
+          {folderMenu}
+          {newMeetingButton("primary")}
+        </>
+      }
+    >
       {startError !== null && (
         <InlineError
           className={styles.error}
@@ -200,41 +273,110 @@ export function HomeScreen({
           onRetry={meetings.reload}
         />
       )}
-      {meetings.status === "ready" && meetings.data.list.length === 0 && (
-        <EmptyState
-          title="No meetings yet"
-          description={
-            noModel
-              ? modelNeeded
-              : "Start one, and its notes and transcript are kept here."
-          }
-          action={newMeetingButton("default")}
+      {meetings.status === "ready" && (
+        <FolderBar
+          collections={meetings.data.collections}
+          view={view}
+          onSelect={chooseView}
+          onNewFolder={() => setFolderDialog("new")}
         />
       )}
       {meetings.status === "ready" &&
-        meetings.data.list.length > 0 &&
-        dates !== null && (
-          <>
-            {noModel && <p className={styles.notice}>{modelNeeded}</p>}
-            <MeetingList
-              meetings={meetings.data.list}
-              dates={dates}
-              onOpen={openMeeting}
-              onDeleted={reloadMeetings}
-              listRef={listRef}
-            />
-          </>
+        view.kind !== "all" &&
+        shown.length === 0 && (
+          <EmptyState
+            title={
+              folderName !== null
+                ? `No meetings in ${folderName}`
+                : "No unfiled meetings"
+            }
+            description={
+              folderName !== null
+                ? "Start one here, or move meetings in with Move to… in their ⋯ menu."
+                : "Every meeting is in a folder."
+            }
+            action={
+              folderName !== null ? newMeetingButton("default") : undefined
+            }
+          />
         )}
+      {meetings.status === "ready" &&
+        view.kind === "all" &&
+        meetings.data.list.length === 0 && (
+          <EmptyState
+            title="No meetings yet"
+            description={
+              noModel
+                ? modelNeeded
+                : "Start one, and its notes and transcript are kept here."
+            }
+            action={newMeetingButton("default")}
+          />
+        )}
+      {meetings.status === "ready" && shown.length > 0 && dates !== null && (
+        <>
+          {noModel && <p className={styles.notice}>{modelNeeded}</p>}
+          <MeetingList
+            meetings={shown}
+            collections={meetings.data.collections}
+            showCollection={view.kind === "all"}
+            dates={dates}
+            onOpen={openMeeting}
+            onChanged={reloadMeetings}
+            listRef={listRef}
+          />
+        </>
+      )}
+      {folderDialog === "new" && (
+        <FolderNameDialog
+          save={(name) => api.createCollection(name)}
+          onDone={(name) => {
+            setFolderDialog(null);
+            chooseView({ kind: "collection", name });
+            reloadMeetings();
+          }}
+          onCancel={() => setFolderDialog(null)}
+        />
+      )}
+      {folderDialog === "rename" && folderName !== null && (
+        <FolderNameDialog
+          current={folderName}
+          save={(name) => api.renameCollection(folderName, name)}
+          onDone={(name) => {
+            setFolderDialog(null);
+            chooseView({ kind: "collection", name });
+            reloadMeetings();
+          }}
+          onCancel={() => setFolderDialog(null)}
+        />
+      )}
+      {folderDialog === "delete" && folderName !== null && (
+        <DeleteFolderDialog
+          name={folderName}
+          meetingCount={shown.length}
+          remove={() => api.deleteCollection(folderName)}
+          onDone={() => {
+            setFolderDialog(null);
+            chooseView(ALL);
+            reloadMeetings();
+          }}
+          onCancel={() => setFolderDialog(null)}
+        />
+      )}
     </Screen>
   );
 }
 
 interface MeetingListProps {
   meetings: readonly MeetingSummary[];
+  /** Every folder, for Move to…. */
+  collections: readonly string[];
+  /** Whether each row names its folder: in All, not inside a folder. */
+  showCollection: boolean;
   dates: DateContext;
   onOpen: (meetingId: string) => void;
-  /** A meeting was moved to the Trash: read the list again. */
-  onDeleted: () => void;
+  /** A meeting was moved to the Trash or to another folder: read the list again. */
+  onChanged: () => void;
   listRef: RefObject<HTMLUListElement | null>;
 }
 
@@ -244,9 +386,11 @@ interface MeetingListProps {
  */
 const MeetingList = memo(function MeetingList({
   meetings,
+  collections,
+  showCollection,
   dates,
   onOpen,
-  onDeleted,
+  onChanged,
   listRef,
 }: MeetingListProps) {
   return (
@@ -255,9 +399,11 @@ const MeetingList = memo(function MeetingList({
         <MeetingRow
           key={meeting.id}
           meeting={meeting}
+          collections={collections}
+          showCollection={showCollection}
           dates={dates}
           onOpen={onOpen}
-          onDeleted={onDeleted}
+          onChanged={onChanged}
         />
       ))}
     </List>
@@ -266,16 +412,27 @@ const MeetingList = memo(function MeetingList({
 
 interface MeetingRowProps {
   meeting: MeetingSummary;
+  collections: readonly string[];
+  showCollection: boolean;
   dates: DateContext;
   onOpen: (meetingId: string) => void;
-  onDeleted: () => void;
+  onChanged: () => void;
 }
 
 /**
- * One meeting: it opens on a click, and its ⋯ menu has View and Delete.
- * Delete asks in a dialog first, then moves the meeting to the Trash.
+ * One meeting: it opens on a click, and its ⋯ menu has View, Move to… and
+ * Delete. Move to… picks a folder in a dialog. Delete asks in a dialog
+ * first, then moves the meeting to the Trash.
  */
-function MeetingRow({ meeting, dates, onOpen, onDeleted }: MeetingRowProps) {
+function MeetingRow({
+  meeting,
+  collections,
+  showCollection,
+  dates,
+  onOpen,
+  onChanged,
+}: MeetingRowProps) {
+  const [moving, setMoving] = useState(false);
   const [asking, setAsking] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -292,7 +449,7 @@ function MeetingRow({ meeting, dates, onOpen, onDeleted }: MeetingRowProps) {
     try {
       await api.deleteMeeting(meeting.id);
       setAsking(false);
-      onDeleted();
+      onChanged();
     } catch (failure) {
       setError(`Could not delete the meeting: ${errorMessage(failure)}`);
     } finally {
@@ -304,7 +461,13 @@ function MeetingRow({ meeting, dates, onOpen, onDeleted }: MeetingRowProps) {
     <>
       <ListRow
         title={meeting.title}
-        detail={<MeetingDetail meeting={meeting} dates={dates} />}
+        detail={
+          <MeetingDetail
+            meeting={meeting}
+            dates={dates}
+            showCollection={showCollection}
+          />
+        }
         meta={
           recording ? (
             <span className={styles.live}>
@@ -323,6 +486,14 @@ function MeetingRow({ meeting, dates, onOpen, onDeleted }: MeetingRowProps) {
             items={[
               { label: "View", onSelect: () => onOpen(meeting.id) },
               {
+                label: "Move to…",
+                disabled: recording,
+                title: recording
+                  ? "Stop the recording before moving this meeting."
+                  : undefined,
+                onSelect: () => setMoving(true),
+              },
+              {
                 label: "Delete…",
                 danger: true,
                 disabled: recording,
@@ -335,6 +506,21 @@ function MeetingRow({ meeting, dates, onOpen, onDeleted }: MeetingRowProps) {
           />
         }
       />
+      {moving && (
+        <MoveMeetingDialog
+          title={meeting.title}
+          collection={meeting.collection}
+          collections={collections}
+          move={async (collection) => {
+            await api.moveMeeting(meeting.id, collection);
+          }}
+          onDone={() => {
+            setMoving(false);
+            onChanged();
+          }}
+          onCancel={() => setMoving(false)}
+        />
+      )}
       {asking && (
         <ConfirmDialog
           title={`Move “${meeting.title}” to the Trash?`}
@@ -352,41 +538,63 @@ function MeetingRow({ meeting, dates, onOpen, onDeleted }: MeetingRowProps) {
   );
 }
 
-/** The second line of a row: when it started, and whether it was cut short. */
+/**
+ * The second line of a row: when it started, whether it was cut short, and
+ * (in All) its folder.
+ */
 function MeetingDetail({
   meeting,
   dates,
+  showCollection,
 }: {
   meeting: MeetingSummary;
   dates: DateContext;
+  showCollection: boolean;
 }) {
   const date = formatMeetingDate(meeting.startedAt, dates);
+  const parts: ReactNode[] = [];
+  if (date !== "") {
+    parts.push(
+      <time
+        key="date"
+        dateTime={meeting.startedAt}
+        title={formatFullDate(meeting.startedAt, dates)}
+      >
+        {date}
+      </time>,
+    );
+  }
+  if (meeting.status === "interrupted") {
+    parts.push(
+      <span
+        key="interrupted"
+        className={styles.interrupted}
+        title="The recording ended without being stopped. The notes and the transcript up to that point were kept."
+      >
+        Interrupted
+      </span>,
+    );
+  }
+  if (showCollection && meeting.collection !== null) {
+    parts.push(
+      <span key="collection" className={styles.collection}>
+        {meeting.collection}
+      </span>,
+    );
+  }
   return (
     <>
-      {date !== "" && (
-        <time
-          dateTime={meeting.startedAt}
-          title={formatFullDate(meeting.startedAt, dates)}
-        >
-          {date}
-        </time>
-      )}
-      {meeting.status === "interrupted" && (
-        <>
-          {date !== "" && (
+      {parts.map((part, index) => (
+        <Fragment key={index}>
+          {index > 0 && (
             <>
               {" "}
               <span aria-hidden="true">·</span>{" "}
             </>
           )}
-          <span
-            className={styles.interrupted}
-            title="The recording ended without being stopped. The notes and the transcript up to that point were kept."
-          >
-            Interrupted
-          </span>
-        </>
-      )}
+          {part}
+        </Fragment>
+      ))}
     </>
   );
 }

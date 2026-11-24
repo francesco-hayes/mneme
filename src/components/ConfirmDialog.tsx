@@ -26,17 +26,28 @@ export interface ConfirmDialogProps {
   busy?: boolean;
   /** Why the action failed. The dialog stays open, so it can be tried again. */
   error?: string | null;
+  /** The confirm button is off, for example while a name field is empty. */
+  confirmDisabled?: boolean;
+  /**
+   * Controls between the message and the buttons: a name field, a list to
+   * choose from. With content, the focus starts on its first field instead
+   * of on Cancel.
+   */
+  children?: ReactNode;
   onConfirm: () => void;
   onCancel: () => void;
 }
 
-const FOCUSABLE = "button:not(:disabled)";
+const FOCUSABLE = "button:not(:disabled), input:not(:disabled)";
+const FIELD = "input:not(:disabled)";
 
 /**
  * A modal question over the whole window, for an action that needs a yes
  * first. Render it to open it, stop rendering it to close it.
  *
- * Cancel has the focus when it opens, so Return does not confirm by accident.
+ * Cancel has the focus when it opens, so Return does not confirm by accident;
+ * with fields in `children`, the first field (a checked radio button first)
+ * has it instead.
  * Tab stays inside, Escape cancels, and the rest of the window is inert
  * meanwhile. On close the focus goes back to what had it before.
  */
@@ -49,6 +60,8 @@ export function ConfirmDialog({
   danger = false,
   busy = false,
   error = null,
+  confirmDisabled = false,
+  children,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
@@ -64,7 +77,16 @@ export function ConfirmDialog({
         : null;
     const app = document.getElementById("root");
     app?.setAttribute("inert", "");
-    cancelButton.current?.focus();
+    const field =
+      dialog.current?.querySelector<HTMLInputElement>(
+        `${FIELD}:checked, input[type="text"]:not(:disabled)`,
+      ) ?? dialog.current?.querySelector<HTMLInputElement>(FIELD);
+    if (field) {
+      field.focus();
+      if (field.type === "text") field.select();
+    } else {
+      cancelButton.current?.focus();
+    }
     return () => {
       app?.removeAttribute("inert");
       if (opener?.isConnected) opener.focus();
@@ -117,6 +139,7 @@ export function ConfirmDialog({
             {message}
           </p>
         )}
+        {children}
         {error !== null && <InlineError message={error} />}
         <div className={styles.buttons}>
           <Button ref={cancelButton} disabled={busy} onClick={onCancel}>
@@ -124,7 +147,7 @@ export function ConfirmDialog({
           </Button>
           <Button
             variant={danger ? "danger" : "primary"}
-            disabled={busy}
+            disabled={busy || confirmDisabled}
             onClick={onConfirm}
           >
             {busy && busyLabel !== undefined ? busyLabel : confirmLabel}

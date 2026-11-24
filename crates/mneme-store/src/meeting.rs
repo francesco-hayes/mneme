@@ -128,7 +128,8 @@ pub struct MeetingSummary {
     pub model: Option<String>,
     /// Language setting used for transcription, if recorded.
     pub language: Option<String>,
-    /// The meeting's folder, a direct child of the store root.
+    /// The meeting's folder: a direct child of the store root, or of a
+    /// collection in the root.
     pub folder: PathBuf,
 }
 
@@ -151,6 +152,16 @@ pub struct Meeting {
 }
 
 impl MeetingSummary {
+    /// The collection the meeting is in: the name of its folder's parent
+    /// when that is not `root`. `None` for a meeting directly in the root.
+    pub fn collection(&self, root: &Path) -> Option<&str> {
+        let parent = self.folder.parent()?;
+        if parent == root {
+            return None;
+        }
+        parent.file_name()?.to_str()
+    }
+
     /// Path of this meeting's `notes.md`.
     pub fn notes_path(&self) -> PathBuf {
         self.folder.join(NOTES_FILE)

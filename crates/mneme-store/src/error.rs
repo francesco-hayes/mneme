@@ -66,6 +66,25 @@ pub enum Error {
         status: MeetingStatus,
     },
 
+    /// The operation would move or rename files of a meeting that is
+    /// recording. Nothing was changed.
+    #[error("meeting {id} is being recorded")]
+    Recording { id: MeetingId },
+
+    /// No collection (folder of meetings) with this name is in the root.
+    #[error("no folder named \"{name}\"")]
+    CollectionNotFound { name: String },
+
+    /// A meeting in this collection is recording, so the collection cannot
+    /// be renamed or removed. Nothing was changed.
+    #[error("a meeting in the folder \"{name}\" is being recorded")]
+    CollectionRecording { name: String },
+
+    /// A name for a new or renamed collection cannot be used. `reason` is a
+    /// whole sentence. Nothing was changed.
+    #[error("{reason}")]
+    InvalidCollectionName { reason: &'static str },
+
     /// A value given for a setting cannot be used. Nothing was changed.
     /// `key` is the setting's name in `settings.json`; `reason` says what is
     /// wrong with the value.

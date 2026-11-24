@@ -3,6 +3,8 @@
 //! The area crates' own types do not derive `serde`; they are mapped here.
 //! Field names serialize in camelCase, exactly as the contract spells them.
 
+use std::path::Path;
+
 use mneme_store as store;
 use mneme_transcribe as transcribe;
 use serde::Serialize;
@@ -23,13 +25,18 @@ pub struct MeetingSummary {
     pub started_at: String,
     pub duration_secs: Option<u64>,
     pub status: &'static str,
+    /// The collection (shown as a folder) the meeting is in; `None` in the
+    /// root.
+    pub collection: Option<String>,
 }
 
 impl MeetingSummary {
     /// `live` says whether this run of the app is recording the meeting. A
     /// meeting that is `recording` on disk with nothing recording it (its
     /// recovery failed) is shown as interrupted, never as live.
-    pub fn from_store(summary: &store::MeetingSummary, live: bool) -> Self {
+    /// `root` is the meetings root, which says whether the meeting's folder
+    /// is in a collection.
+    pub fn from_store(summary: &store::MeetingSummary, root: &Path, live: bool) -> Self {
         let status = match summary.status {
             store::MeetingStatus::Recording if !live => STATUS_INTERRUPTED,
             status => status.as_str(),
@@ -40,6 +47,7 @@ impl MeetingSummary {
             started_at: summary.started_at.to_rfc3339(),
             duration_secs: summary.duration_secs,
             status,
+            collection: summary.collection(root).map(str::to_owned),
         }
     }
 }
@@ -55,9 +63,9 @@ pub struct Meeting {
 }
 
 impl Meeting {
-    pub fn from_store(meeting: &store::Meeting, live: bool) -> Self {
+    pub fn from_store(meeting: &store::Meeting, root: &Path, live: bool) -> Self {
         Self {
-            summary: MeetingSummary::from_store(&meeting.summary, live),
+            summary: MeetingSummary::from_store(&meeting.summary, root, live),
             notes: meeting.notes.clone(),
             transcript_line_count: meeting.transcript_line_count,
             folder_path: meeting.summary.folder.to_string_lossy().into_owned(),
@@ -201,6 +209,7 @@ mod tests {
                 started_at: "2026-11-12T10:00:00+01:00".into(),
                 duration_secs: None,
                 status: STATUS_RECORDING,
+                collection: Some("Acme".into()),
             },
             notes: "n".into(),
             transcript_line_count: 2,
@@ -210,7 +219,7 @@ mod tests {
             serde_json::to_value(&meeting).unwrap(),
             json!({
                 "id": "m1", "title": "Weekly", "startedAt": "2026-11-12T10:00:00+01:00",
-                "durationSecs": null, "status": "recording", "notes": "n",
+                "durationSecs": null, "status": "recording", "collection": "Acme", "notes": "n",
                 "transcriptLineCount": 2, "folderPath": "/tmp/x"
             })
         );

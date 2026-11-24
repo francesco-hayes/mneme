@@ -11,6 +11,8 @@
 //!     notes-timeline.jsonl   {"t":"00:04:12","text":"- ask Ana about the API"}
 //!   2026-10-27 1430 Meeting/    default title kept
 //!   2026-10-27 1430 Meeting 2/  another meeting started in the same minute
+//!   Acme/                       a collection: a folder of meeting folders
+//!     2026-10-28 1000 Kickoff/
 //! ```
 //!
 //! The folders are the source of truth. A meeting's identity is the `id` in
@@ -30,6 +32,9 @@
 //!   meetings.
 //! - `list`: scanning the root: [`Store::list_meetings`] with its warnings,
 //!   [`Store::load_meeting`], and finding a folder by id.
+//! - `collection`: collections, the folders of meetings the app shows as
+//!   folders: create, rename, move a meeting in or out, create a meeting in
+//!   one.
 //! - `recovery`: [`Store::recover`], which closes the meetings a crash left
 //!   open.
 //! - `meeting`: [`MeetingSummary`], [`MeetingId`], [`MeetingStatus`] and how
@@ -50,6 +55,7 @@
 //!   file here that does not live under the meetings root.
 
 mod append;
+mod collection;
 mod error;
 mod frontmatter;
 mod list;

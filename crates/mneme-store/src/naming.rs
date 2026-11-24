@@ -78,6 +78,29 @@ pub(crate) fn numbered_folder_name(name: &str, number: u32) -> String {
     }
 }
 
+/// Whether a folder name starts like a meeting folder's: `YYYY-MM-DD HHMM`,
+/// then a space or the end of the name.
+///
+/// A scan uses it to tell a meeting folder that lost its `notes.md` (a crash
+/// during create) from a collection, and a collection may not be given such
+/// a name.
+pub(crate) fn looks_like_meeting_folder(name: &str) -> bool {
+    let bytes = name.as_bytes();
+    let digits = |range: std::ops::Range<usize>| {
+        bytes
+            .get(range)
+            .is_some_and(|part| part.iter().all(u8::is_ascii_digit))
+    };
+    digits(0..4)
+        && bytes.get(4) == Some(&b'-')
+        && digits(5..7)
+        && bytes.get(7) == Some(&b'-')
+        && digits(8..10)
+        && bytes.get(10) == Some(&b' ')
+        && digits(11..15)
+        && matches!(bytes.get(15), None | Some(b' '))
+}
+
 /// Drops control and direction characters and collapses whitespace runs to
 /// one space, trimming both ends. With `for_file_name`, characters unsafe in
 /// file names count as whitespace.
@@ -129,6 +152,29 @@ fn truncate(s: &str, max_chars: usize, max_bytes: usize) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn meeting_folder_names_are_told_from_other_names() {
+        for name in [
+            "2026-10-27 1430 Meeting",
+            "2026-10-27 1430 Meeting 2",
+            "2026-10-27 1430",
+        ] {
+            assert!(looks_like_meeting_folder(name), "{name}");
+        }
+        for name in [
+            "Acme",
+            "2026",
+            "2026-10-27",
+            "2026-10-27 Planning",
+            "2026-10-27 14:30 Meeting",
+            "2026-10-27 14301",
+            "Q4 2026-10-27 1430",
+            "",
+        ] {
+            assert!(!looks_like_meeting_folder(name), "{name}");
+        }
+    }
 
     #[test]
     fn ordinary_titles_pass_through() {

@@ -3,6 +3,7 @@ import "./jsdomGaps";
 import { cleanup } from "@testing-library/react";
 import { afterEach } from "vitest";
 import { mockApi } from "../lib/api/mock";
+import { resetRememberedFolder } from "../screens/home/folderView";
 import { resetNotesAutosave } from "../screens/meeting/notesAutosave";
 
 afterEach(() => {
@@ -11,5 +12,6 @@ afterEach(() => {
   // timer leaks into the next test.
   cleanup();
   resetNotesAutosave();
+  resetRememberedFolder();
   mockApi.mock.reset();
 });

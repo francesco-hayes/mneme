@@ -14,6 +14,8 @@ export interface MockMeetingSeed {
   status: MeetingStatus;
   notes: string;
   transcript: TranscriptLine[];
+  /** The collection (folder) it is in. Default: none. */
+  collection?: string | null;
 }
 
 /**
@@ -318,6 +320,38 @@ export function seedMeetings(now: Date): MockMeetingSeed[] {
 }
 
 /** `seedMeetings` plus one meeting whose transcript has `lineCount` lines. */
+/** The default seed with two meetings filed in folders, plus an empty folder. */
+export function seedMeetingsInFolders(now: Date): MockMeetingSeed[] {
+  return seedMeetings(now).map((meeting, index) =>
+    index === 0
+      ? { ...meeting, collection: "Acme" }
+      : index === 1
+        ? { ...meeting, collection: "Design" }
+        : meeting,
+  );
+}
+
+/** The collections of `seedMeetingsInFolders`, empty one included. */
+export const SEED_COLLECTIONS = ["Acme", "Design", "Hiring"];
+
+/**
+ * A collection name as the backend stores it (`sanitize_title`): characters
+ * unsafe in file names become spaces, whitespace collapses, leading dots go.
+ */
+export function collectionName(name: string): string {
+  return name
+    .replace(/[/\\:*?"<>|]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^[.\s]+/, "")
+    .replace(/[.\s]+$/, "");
+}
+
+/** Whether a name starts like a meeting folder's: `YYYY-MM-DD HHMM`. */
+export function looksLikeMeetingFolder(name: string): boolean {
+  return /^\d{4}-\d{2}-\d{2} \d{4}( |$)/.test(name);
+}
+
 export function seedMeetingsWithLongTranscript(
   now: Date,
   lineCount = 2000,

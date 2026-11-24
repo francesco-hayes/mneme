@@ -172,6 +172,69 @@ describe("meetings", () => {
   });
 });
 
+describe("collections", () => {
+  test("the folders scenario files two meetings and has an empty folder", async () => {
+    const api = create(mockScenarios.folders);
+    expect(await api.listCollections()).toEqual(["Acme", "Design", "Hiring"]);
+    const byId = new Map(
+      (await api.listMeetings()).map((m) => [m.id, m.collection]),
+    );
+    expect(byId.get("mtg-standup")).toBe("Acme");
+    expect(byId.get("mtg-design-review")).toBe("Design");
+    expect(byId.get("mtg-planning")).toBeNull();
+    expect((await api.getMeeting("mtg-standup")).folderPath).toMatch(
+      /\/Mneme\/Acme\/[^/]+ Standup$/,
+    );
+  });
+
+  test("names are made safe, and empty, date-like or taken names refused", async () => {
+    const api = create();
+    expect(await api.createCollection("  Acme / Q4 ")).toBe("Acme Q4");
+    await expect(api.createCollection("acme q4")).rejects.toThrow(
+      "already exists",
+    );
+    await expect(api.createCollection("  ")).rejects.toThrow("empty");
+    await expect(api.createCollection("2026-10-27 1430 x")).rejects.toThrow(
+      "date and time",
+    );
+    expect(await api.listCollections()).toEqual(["Acme Q4"]);
+  });
+
+  test("a meeting starts in a folder and moves in and out, but not while it records", async () => {
+    const api = create({ stopDelayMs: 0 });
+    await api.createCollection("Acme");
+    await expect(api.startMeeting("Nope")).rejects.toThrow("no folder");
+
+    const live = await api.startMeeting("Acme");
+    expect(live.collection).toBe("Acme");
+    await expect(api.moveMeeting(live.id, null)).rejects.toThrow(
+      "being recorded",
+    );
+    await expect(api.renameCollection("Acme", "B")).rejects.toThrow(
+      "being recorded",
+    );
+    await expect(api.deleteCollection("Acme")).rejects.toThrow(
+      "being recorded",
+    );
+    await api.stopMeeting();
+
+    expect((await api.moveMeeting(live.id, null)).collection).toBeNull();
+    expect((await api.moveMeeting("mtg-standup", "Acme")).collection).toBe(
+      "Acme",
+    );
+  });
+
+  test("renaming a folder takes its meetings along; deleting removes them", async () => {
+    const api = create(mockScenarios.folders);
+    expect(await api.renameCollection("Acme", "Acme Corp")).toBe("Acme Corp");
+    expect((await api.getMeeting("mtg-standup")).collection).toBe("Acme Corp");
+
+    await api.deleteCollection("Acme Corp");
+    expect(await api.listCollections()).toEqual(["Design", "Hiring"]);
+    await expect(api.getMeeting("mtg-standup")).rejects.toThrow("not found");
+  });
+});
+
 describe("recording", () => {
   test("starting creates a recording meeting with a date-time title", async () => {
     const api = create();
