@@ -11,6 +11,7 @@ One PRD per build area. Source of truth for scope is [mneme-scope.md](../mneme-s
 | [04](04-storage.md) | Storage: meeting folders, transcript, notes, settings | Build step 4; "Storing meetings"; gap "Incremental saves" | 010–014, 026 |
 | [05](05-ui.md) | UI: first run, Home, meeting views, Settings | Build step 5; MVP features 3 and 4; Design and UI | 015–020 |
 | [06](06-integration-and-finish.md) | Integration and finish: commands, menu bar, shortcut, permissions, signing | Build step 6; gap "Recording indicator" | 021–025 |
+| [07](07-enhanced-notes.md) | Enhanced notes: a model on the Mac or a server the user picks turns notes + transcript into clean notes (draft) | Gaps "Enhanced notes (local LLM)", "Meeting title"; Architecture "Enhancement" | 037–044 (proposed) |
 
 ## Decisions these PRDs rely on
 

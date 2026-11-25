@@ -136,6 +136,8 @@ Newest first. Add a row whenever something is settled.
 
 | Date | Decision | Rationale |
 | --- | --- | --- |
+| 2026-11-24 | Notes are enhanced when the user presses Enhance notes; automatic enhancement after Stop is a setting, off by default | Running unasked is annoying, and with a server source it would send notes out without a deliberate action. |
+| 2026-11-24 | Enhanced notes can run on a model on the Mac (from Mneme's list or a model file) or on any server the user names, local or remote. Nothing is sent until the user sets one up, and the app always says where notes go | Flexibility that enables privacy: the user decides what they trust, rather than Mneme deciding for them. Narrows the "Local only" principle to the default setup; see PRD 07. |
 | 2026-11-24 | Keep the two-hour backlog limit: at the limit a new chunk is dropped and reported, not queued | Protects memory when the transcriber has stalled or is hours behind; only then does it act, and every hole is named in the transcript summary. |
 | 2026-11-24 | v1 recommends headphones and does no echo cancellation | Keeps v1 simple; revisit if bleed is a problem in real calls. |
 | 2026-11-12 | v1 is English only: no language setting in the UI; transcription runs as English | The app was only ever meant for English; a language picker is not MVP. The engine's language support stays in the code, unused. |
